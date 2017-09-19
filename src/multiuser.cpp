@@ -95,7 +95,7 @@ public:
 
     ~UserSentry() {
         if (m_orig_uid != -1) {setfsuid(m_orig_uid);}
-        if (m_orig_gid != -1) {setfsuid(m_orig_gid);}
+        if (m_orig_gid != -1) {setfsgid(m_orig_gid);}
     }
 
 private:

@@ -19,8 +19,8 @@ add_definitions(-D_POSIX_C_SOURCE=200809L)
 include_directories(${XROOTD_INCLUDES})
 
 add_library(XrdMultiuser SHARED src/multiuser.cpp)
-target_link_libraries(XrdMultiuser ${XROOTD_UTILS_LIB})
-set_target_properties(XrdMultiuser PROPERTIES SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
+target_link_libraries(XrdMultiuser -ldl ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
+set_target_properties(XrdMultiuser PROPERTIES OUTPUT_NAME "XrdMultiuser-4" SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 

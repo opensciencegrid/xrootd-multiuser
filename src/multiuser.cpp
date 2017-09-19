@@ -30,6 +30,10 @@ extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      const char     *parm,
                                                      XrdVersionInfo &myVer);
 
+// TODO: set this via library parameters.
+static const int g_minimum_uid = 500;
+static const int g_minimum_gid = 500;
+
 
 class UserSentry {
 public:
@@ -71,11 +75,19 @@ public:
             m_log.Emsg("UserSentry", "Failed to lookup UID for username", client->name, strerror(retval));
             return;
         }
-        m_log.Emsg("UserSentry", "Switching FS uid for user", client->name);
+        if (pwd.pw_uid < g_minimum_uid) {
+            m_log.Emsg("UserSentry", "Username", client->name, "maps to a system UID; rejecting lookup");
+            return;
+        }
+        if (pwd.pw_gid < g_minimum_gid) {
+            m_log.Emsg("UserSentry", "Username", client->name, "maps to a system GID; rejecting lookup");
+            return;
+        }
 
+        m_log.Emsg("UserSentry", "Switching FS uid for user", client->name);
         m_orig_uid = setfsuid(result->pw_uid);
-        // TODO: log failures.
         if (m_orig_uid < 0) {
+            m_log.Emsg("UserSentry", "Failed to switch FS uid for user", client->name);
             return;
         }
         m_orig_gid = setfsgid(result->pw_gid);
@@ -283,8 +295,8 @@ public:
                 }
                 authLib = val;
                 std::vector<char> rest; rest.reserve(2048);
-                if (!Config.GetRest(&rest[0], sizeof(rest))) {
-                    m_log.Emsg("Config", "Parameters line too long");
+                if (!Config.GetRest(&rest[0], 2048)) {
+                    m_log.Emsg("Config", "authlib parameters line too long");
                     Config.Close();
                     return false;
                 }

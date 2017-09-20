@@ -16,7 +16,7 @@ LimitNOFILE=65536
 WorkingDirectory=/var/spool/xrootd
 
 # These provide xrootd with the ability to switch UIDs/GIDs for reading/writing files.
-CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE
 Capabilities=CAP_SETGID+p CAP_SETUID+p
 
 [Install]

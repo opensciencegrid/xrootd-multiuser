@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.2
+Version: 0.3
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -54,6 +54,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Wed Sep 20 2017 Brian Bockelman <bbockelm@cse.unl.edu> - 0.3-1
+- Fix effective capabilities on all transfer threads.
+
 * Wed Sep 20 2017 Brian Bockelman <bbockelm@cse.unl.edu> - 0.2-1
 - Initial packaging of the multiuser plugin.
 

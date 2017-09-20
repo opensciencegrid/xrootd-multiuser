@@ -16,25 +16,11 @@ ofs.authlib libXrdAccSciTokens.so default
 ```
 
 Additionally, the Xrootd process must be started with the appropriate Linux capabilities in order to successfully
-execute the `setfsuid` and `setfsgid` calls.  To do this, first set the capabilities on the file `/usr/bin/xrootd` itself:
+read and write as different users (i.e., execute the `setfsuid` and `setfsgid` calls).  To suppor this, we have a
+separate systemd unit called `xrootd-privileged@.service`.
+
+So, to start the configuration in `/etc/xrootd/xrootd-clusterd.cfg` with the multiuser plugin enabled, execute:
 
 ```
-setcap 'cap_setgid+ep cap_setuid+ep' /usr/bin/xrootd
+systemctl start xrootd-privileged@clusterd
 ```
-
-Alternately, you may want to copy this to a different binary, such as `/usr/bin/xrootd-privileged`.  Symlinks do not work with capabilities.
-
-Then, override the systemd unit by creating an override directory:
-
-```
-# mkdir /etc/systemd/system/xrootd@multiuser.service.d/
-```
-
-Then, in `/etc/systemd/system/xrootd@multiuser.service.d/override.conf`:
-
-```
-[Service]
-CapabilityBoundingSet=CAP_SETUID CAP_SETGID
-```
-
-This is assuming that you are trying to start with the configuration in `/etc/xrootd/xrootd-multiuser.cfg`.

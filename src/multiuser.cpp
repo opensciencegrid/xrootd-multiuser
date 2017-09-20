@@ -15,10 +15,10 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <sys/capability.h>
 #include <sys/fsuid.h>
 #include <sys/types.h>
 #include <unistd.h>
-
 
 XrdVERSIONINFO(XrdSfsGetFileSystem, Multiuser);
 
@@ -515,9 +515,59 @@ XrdSfsGetFileSystem(XrdSfsFileSystem *native_fs,
                     XrdSysLogger     *lp,
                     const char       *configfn)
 {
+    XrdSysError log(lp, "multiuser_");
+    // See if we have the appropriate capabilities to run this plugin.
+    cap_t caps = cap_get_proc();
+    if (caps == NULL) {
+        log.Emsg("Initialize", "Failed to query xrootd daemon's capabilities", strerror(errno));
+        return nullptr;
+    }
+    cap_value_t cap_list[2];
+    int caps_to_set = 0;
+    cap_flag_value_t test_flag = CAP_CLEAR;
+    // We must be at least permitted to acquire the needed capabilities.
+    cap_get_flag(caps, CAP_SETUID, CAP_PERMITTED, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("Initialize", "CAP_SETUID not in xrootd daemon's permitted set; unable to start multiuser plugin");
+        cap_free(caps);
+        return nullptr;
+    }
+    cap_get_flag(caps, CAP_SETGID, CAP_PERMITTED, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+       log.Emsg("Initialize", "CAP_SETGID not in xrootd daemon's permitted set; unable to start multiuser plugin");
+        cap_free(caps);
+       return nullptr;
+    }
+
+    // Determine which new capabilities are needed to be added to the effective set.
+    cap_get_flag(caps, CAP_SETUID, CAP_EFFECTIVE, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("Initialize", "Will request effective capability for CAP_SETUID");
+        cap_list[caps_to_set] = CAP_SETUID;
+        caps_to_set++;
+    }
+    cap_get_flag(caps, CAP_SETGID, CAP_EFFECTIVE, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("Initialize", "Will request effective capability for CAP_SETGID");
+        cap_list[caps_to_set] = CAP_SETGID;
+        caps_to_set++;
+    }
+    if (cap_set_flag(caps, CAP_EFFECTIVE, caps_to_set, cap_list, CAP_SET) == -1) {
+        log.Emsg("Initialize", "Failed to add capabilities to the requested list.");
+        cap_free(caps);
+        return nullptr;
+    }
+    if (cap_set_proc(caps) == -1) {
+        log.Emsg("Initialize", "Failed to acquire necessary capabilities to start multiuser plugin");
+        cap_free(caps);
+        return nullptr;
+    }
+    cap_free(caps);
+
     try {
         return new MultiuserFileSystem(native_fs, lp, configfn);
-    } catch (std::runtime_error &) {
+    } catch (std::runtime_error &re) {
+        log.Emsg("Initialize", "Encountered a runtime failure", re.what());
         return nullptr;
     }
 }

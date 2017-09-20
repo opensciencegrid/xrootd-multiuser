@@ -5,6 +5,7 @@ project( xrootd-multiuser )
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
 find_package( Xrootd REQUIRED )
+find_package( Cap REQUIRED )
 
 macro(use_cxx11)
   if (CMAKE_VERSION VERSION_LESS "3.1")
@@ -29,12 +30,17 @@ add_definitions(-D_POSIX_C_SOURCE=200809L)
 include_directories(${XROOTD_INCLUDES})
 
 add_library(XrdMultiuser SHARED src/multiuser.cpp)
-target_link_libraries(XrdMultiuser -ldl ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
+target_link_libraries(XrdMultiuser -ldl ${CAP_LIB} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
 set_target_properties(XrdMultiuser PROPERTIES OUTPUT_NAME "XrdMultiuser-4" SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 
 install(
   TARGETS XrdMultiuser
-  LIBRARY DESTINATION ${LIB_INSTALL_DIR})
+  LIBRARY DESTINATION ${LIB_INSTALL_DIR}
+)
 
+install(
+  FILES ${CMAKE_SOURCE_DIR}/configs/xrootd-privileged@.service
+  DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
+)

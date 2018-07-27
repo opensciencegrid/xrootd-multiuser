@@ -12,7 +12,7 @@ without this, Xrootd will always read and write as the Unix user `xrootd`.
 To configure, add the following line to the Xrootd configuration file:
 
 ```
-ofs.authlib libXrdAccSciTokens.so default
+xrootd.fslib libXrdMultiuser.so default
 ```
 
 Additionally, the Xrootd process must be started with the appropriate Linux capabilities in order to successfully
@@ -22,5 +22,5 @@ separate systemd unit called `xrootd-privileged@.service`.
 So, to start the configuration in `/etc/xrootd/xrootd-clusterd.cfg` with the multiuser plugin enabled, execute:
 
 ```
-systemctl start xrootd-privileged@clusterd
+systemctl start xrootd-privileged@clustered
 ```

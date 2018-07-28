@@ -35,6 +35,31 @@ static const int g_minimum_uid = 500;
 static const int g_minimum_gid = 500;
 
 
+class ErrorSentry
+{
+public:
+    ErrorSentry(XrdOucErrInfo &dst_err, XrdOucErrInfo &src_err)
+        : m_dst_err(dst_err), m_src_err(src_err)
+    {}
+
+    ~ErrorSentry()
+    {
+        if (m_src_err.getErrInfo())
+        {
+            m_dst_err = m_src_err;;
+        }
+        else
+        {
+            m_dst_err.Reset();
+        }
+    }
+
+private:
+    XrdOucErrInfo &m_dst_err;
+    XrdOucErrInfo &m_src_err;
+};
+
+
 static bool check_caps(XrdSysError &log) {
     // See if we have the appropriate capabilities to run this plugin.
     cap_t caps = cap_get_proc();
@@ -183,6 +208,7 @@ public:
          const XrdSecEntity       *client,
          const char               *opaque = 0) override
     {
+        ErrorSentry err_sentry(error, m_sfs->error);
         UserSentry sentry(client, m_log, m_authz.get(), opaque);
         return m_sfs->open(fileName, openMode, createMode, client, opaque);
     }
@@ -190,6 +216,7 @@ public:
     virtual int
     close() override
     {
+        ErrorSentry sentry(error, m_sfs->error);
         return m_sfs->close();
     }
 
@@ -198,66 +225,107 @@ public:
         const char           *args,
               XrdOucErrInfo  &out_error) override
     {
+        ErrorSentry sentry(error, m_sfs->error);
         return m_sfs->fctl(cmd, args, out_error);
     }
 
     virtual const char *
-    FName() override {return m_sfs->FName();}
+    FName() override
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->FName();
+    }
 
     virtual int
     getMmap(void **Addr, off_t &Size) override
-    {return m_sfs->getMmap(Addr, Size);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->getMmap(Addr, Size);
+    }
 
     virtual int
     read(XrdSfsFileOffset   fileOffset,
          XrdSfsXferSize     amount) override
-    {return m_sfs->read(fileOffset, amount);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->read(fileOffset, amount);
+    }
 
     virtual XrdSfsXferSize
     read(XrdSfsFileOffset   fileOffset,
          char              *buffer,
          XrdSfsXferSize     buffer_size) override
-    {return m_sfs->read(fileOffset, buffer, buffer_size);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->read(fileOffset, buffer, buffer_size);
+    }
 
     virtual int
     read(XrdSfsAio *aioparm) override
-    {return m_sfs->read(aioparm);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->read(aioparm);
+    }
 
     virtual XrdSfsXferSize
     write(XrdSfsFileOffset   fileOffset,
           const char        *buffer,
           XrdSfsXferSize     buffer_size) override
-    {return m_sfs->write(fileOffset, buffer, buffer_size);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->write(fileOffset, buffer, buffer_size);
+    }
 
     virtual int
     write(XrdSfsAio *aioparm) override
-    {return m_sfs->write(aioparm);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->write(aioparm);
+    }
 
     virtual int
     sync() override
-    {return m_sfs->sync();}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->sync();
+    }
 
     virtual int
     sync(XrdSfsAio *aiop) override
-    {return m_sfs->sync(aiop);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->sync(aiop);
+    }
 
     virtual int
     stat(struct stat *buf) override
-    {return m_sfs->stat(buf);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->stat(buf);
+    }
 
     virtual int
     truncate(XrdSfsFileOffset   fileOffset) override
-    {return m_sfs->truncate(fileOffset);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->truncate(fileOffset);
+    }
 
     virtual int
     getCXinfo(char cxtype[4], int &cxrsz) override
-    {return m_sfs->getCXinfo(cxtype, cxrsz);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->getCXinfo(cxtype, cxrsz);
+    }
 
     virtual int
     SendData(XrdSfsDio         *sfDio,
              XrdSfsFileOffset   offset,
              XrdSfsXferSize     size) override
-    {return m_sfs->SendData(sfDio, offset, size);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->SendData(sfDio, offset, size);
+    }
 
 private:
     std::unique_ptr<XrdSfsFile> m_sfs;
@@ -279,25 +347,38 @@ public:
     open(const char              *path,
          const XrdSecEntity      *client = 0,
          const char              *opaque = 0) override {
+        ErrorSentry err_sentry(error, m_sfs->error);
         UserSentry sentry(client, m_log, m_authz.get(), opaque);
         return m_sfs->open(path, client, opaque);
     }
 
     virtual const char *
     nextEntry() override
-    {return m_sfs->nextEntry();}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->nextEntry();
+    }
 
     virtual int
     close() override
-    {return m_sfs->close();}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->close();
+    }
 
     virtual const char *
     FName() override
-    {return m_sfs->FName();}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->FName();
+    }
 
     virtual int
     autoStat(struct stat *buf) override
-    {return m_sfs->autoStat(buf);}
+    {
+        ErrorSentry sentry(error, m_sfs->error);
+        return m_sfs->autoStat(buf);
+    }
 
 private:
     std::unique_ptr<XrdSfsDirectory> m_sfs;

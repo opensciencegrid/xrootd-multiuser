@@ -38,15 +38,24 @@ static const int g_minimum_gid = 500;
 class ErrorSentry
 {
 public:
-    ErrorSentry(XrdOucErrInfo &dst_err, XrdOucErrInfo &src_err)
+    ErrorSentry(XrdOucErrInfo &dst_err, XrdOucErrInfo &src_err, bool forOpen = false)
         : m_dst_err(dst_err), m_src_err(src_err)
-    {}
+    {
+        unsigned long long cbArg;
+        XrdOucEICB *cbVal = dst_err.getErrCB(cbArg);
+
+        if (forOpen)
+        {
+            src_err.setUCap(dst_err.getUCap());
+        }
+        src_err.setErrCB(cbVal, cbArg);
+    }
 
     ~ErrorSentry()
     {
         if (m_src_err.getErrInfo())
         {
-            m_dst_err = m_src_err;;
+            m_dst_err = m_src_err;
         }
         else
         {
@@ -208,7 +217,7 @@ public:
          const XrdSecEntity       *client,
          const char               *opaque = 0) override
     {
-        ErrorSentry err_sentry(error, m_sfs->error);
+        ErrorSentry err_sentry(error, m_sfs->error, true);
         UserSentry sentry(client, m_log, m_authz.get(), opaque);
         return m_sfs->open(fileName, openMode, createMode, client, opaque);
     }

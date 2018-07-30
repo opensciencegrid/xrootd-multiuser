@@ -122,7 +122,7 @@ static bool check_caps(XrdSysError &log) {
 
 class UserSentry {
 public:
-    UserSentry(const XrdSecEntity *client, XrdSysError &log, XrdAccAuthorize *authz, const char *opaque) :
+    UserSentry(const XrdSecEntity *client, XrdSysError &log, XrdAccAuthorize *authz, const char *opaque, const char *path) :
         m_log(log)
     {
         if (!client) {
@@ -132,7 +132,7 @@ public:
         if (authz && (client->sessvar != reinterpret_cast<int *>(1)) && (!client->name || !client->name[0])) {
             const_cast<XrdSecEntity*>(client)->sessvar = reinterpret_cast<int *>(1);
             XrdOucEnv env(opaque, 0, client);
-            authz->Access(client, "/", AOP_Any, &env);
+            authz->Access(client, path, AOP_Stat, &env);
         }
         if (!client->name || !client->name[0]) {
             log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
@@ -218,7 +218,7 @@ public:
          const char               *opaque = 0) override
     {
         ErrorSentry err_sentry(error, m_sfs->error, true);
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
         return m_sfs->open(fileName, openMode, createMode, client, opaque);
     }
 
@@ -357,7 +357,7 @@ public:
          const XrdSecEntity      *client = 0,
          const char              *opaque = 0) override {
         ErrorSentry err_sentry(error, m_sfs->error);
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, path);
         return m_sfs->open(path, client, opaque);
     }
 
@@ -486,6 +486,9 @@ public:
                              (dlsym(m_handle, "XrdAccAuthorizeObject"));
             if (ep) {
                 m_authz.reset(ep(lp, configfn, authLibParms.c_str()));
+                if (m_authz.get()) {
+                    m_log.Emsg("Config", "Multiuser plugin loaded an authorization object from", resolvePath);
+                }
             } else {
                 m_log.Emsg("Config", "Failed to resolve symbol XrdAccAuthorizeObject",dlerror());
             }
@@ -516,7 +519,7 @@ public:
                  XrdOucErrInfo &eInfo,
            const XrdSecEntity  *client = 0,
            const char          *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, path);
         return m_sfs->chksum(Func, csName, path, eInfo, client, opaque);
     }
 
@@ -526,7 +529,7 @@ public:
                 XrdOucErrInfo    &out_error,
           const XrdSecEntity     *client,
           const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
         return m_sfs->chmod(Name, Mode, out_error, client, opaque);
     }
 
@@ -535,7 +538,7 @@ public:
         // It seems that Xrootd calls this with a different object than elsewhere; to prevent
         // log spam, add an extra check.
         if (client && client->name) {
-            UserSentry sentry(client, m_log, m_authz.get(), nullptr);
+            UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
             return m_sfs->Disc(client);
         } else {
             return m_sfs->Disc(client);
@@ -553,7 +556,7 @@ public:
                  XrdOucErrInfo       &out_error,
            const XrdSecEntity        *client,
            const char                *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
         return m_sfs->exists(fileName, exists_flag, out_error, client, opaque);
     }
 
@@ -562,7 +565,7 @@ public:
           const char             *args,
                 XrdOucErrInfo    &out_error,
           const XrdSecEntity     *client) override {
-        UserSentry sentry(client, m_log, m_authz.get(), nullptr);
+        UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
         return m_sfs->fsctl(cmd, args, out_error);
     }
 
@@ -582,7 +585,7 @@ public:
                 XrdOucErrInfo    &out_error,
           const XrdSecEntity     *client,
           const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, dirName);
         return m_sfs->mkdir(dirName, Mode, out_error, client, opaque);
     }
 
@@ -590,7 +593,7 @@ public:
     prepare(      XrdSfsPrep       &pargs,
                   XrdOucErrInfo    &out_error,
             const XrdSecEntity     *client = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), nullptr);
+        UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
         return m_sfs->prepare(pargs, out_error, client);
     }
 
@@ -599,7 +602,7 @@ public:
               XrdOucErrInfo    &out_error,
         const XrdSecEntity     *client,
         const char             *info = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), info);
+        UserSentry sentry(client, m_log, m_authz.get(), info, path);
         return m_sfs->rem(path, out_error, client, info);
     }
 
@@ -608,7 +611,7 @@ public:
                  XrdOucErrInfo    &out_error,
            const XrdSecEntity     *client,
            const char             *info = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), info);
+        UserSentry sentry(client, m_log, m_authz.get(), info, dirName);
         return m_sfs->remdir(dirName, out_error, client, info);
     }
 
@@ -619,7 +622,7 @@ public:
            const XrdSecEntity     *client,
            const char             *infoO = 0,
            const char             *infoN = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), infoO);
+        UserSentry sentry(client, m_log, m_authz.get(), infoO, oldFileName);
         return m_sfs->rename(oldFileName, newFileName, out_error, client, infoO, infoN);
     }
 
@@ -629,7 +632,7 @@ public:
                XrdOucErrInfo    &out_error,
          const XrdSecEntity     *client,
          const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
         return m_sfs->stat(Name, buf, out_error, client, opaque);
     }
 
@@ -639,7 +642,7 @@ public:
                XrdOucErrInfo    &out_error,
          const XrdSecEntity     *client,
          const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
         return m_sfs->stat(Name, mode, out_error, client, opaque);
     }
 
@@ -649,7 +652,7 @@ public:
                    XrdOucErrInfo    &out_error,
              const XrdSecEntity     *client = 0,
              const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque);
+        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
         return m_sfs->truncate(Name, fileOffset, out_error, client, opaque);
     }
 

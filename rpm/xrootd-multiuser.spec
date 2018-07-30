@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.3.1
+Version: 0.4.0
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -54,6 +54,11 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Mon Jul 30 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.0-1
+- Add support for POSIX-like umask.
+- Make multiuser plugin compatible with Macaroons.
+- Avoid a segfault if the plugin is improperly configured.
+
 * Sat Jul 28 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.3.1-1
 - Propagate errors from underlying SFS object.
 

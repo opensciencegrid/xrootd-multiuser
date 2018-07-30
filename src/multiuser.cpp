@@ -402,6 +402,9 @@ public:
         m_sfs(sfs),
         m_log(lp, "multiuser_")
     {
+        if (!sfs) {
+            throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
+        }
         m_log.Say("------ Initializing the multi-user plugin.");
         if (!Config(lp, configfn)) {
             throw std::runtime_error("Failed to configure multi-user plugin.");
@@ -673,7 +676,7 @@ XrdSfsGetFileSystem(XrdSfsFileSystem *native_fs,
     try {
         return new MultiuserFileSystem(native_fs, lp, configfn);
     } catch (std::runtime_error &re) {
-        log.Emsg("Initialize", "Encountered a runtime failure", re.what());
+        log.Emsg("Initialize", "Encountered a runtime failure:", re.what());
         return nullptr;
     }
 }

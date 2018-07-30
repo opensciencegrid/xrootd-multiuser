@@ -11,6 +11,8 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -18,6 +20,7 @@
 #include <sys/capability.h>
 #include <sys/fsuid.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 XrdVERSIONINFO(XrdSfsGetFileSystem, Multiuser);
@@ -202,7 +205,8 @@ private:
 
 class MultiuserFile : public XrdSfsFile {
 public:
-    MultiuserFile(std::unique_ptr<XrdSfsFile> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz) :
+    MultiuserFile(std::unique_ptr<XrdSfsFile> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz, mode_t umask_mode) :
+        m_umask_mode(umask_mode),
         m_sfs(std::move(sfs)),
         m_log(log),
         m_authz(authz)
@@ -217,6 +221,11 @@ public:
          const XrdSecEntity       *client,
          const char               *opaque = 0) override
     {
+        // Heuristic - if the createMode is the default from Xrootd, apply umask.
+        if (((createMode & 0777) == (S_IRUSR | S_IWUSR)) && (m_umask_mode != static_cast<mode_t>(-1)))
+        {
+            createMode |= 0777;
+        }
         ErrorSentry err_sentry(error, m_sfs->error, true);
         UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
         return m_sfs->open(fileName, openMode, createMode, client, opaque);
@@ -337,6 +346,7 @@ public:
     }
 
 private:
+    mode_t m_umask_mode;
     std::unique_ptr<XrdSfsFile> m_sfs;
     XrdSysError &m_log;
     std::shared_ptr<XrdAccAuthorize> m_authz;
@@ -399,6 +409,7 @@ class MultiuserFileSystem : public XrdSfsFileSystem {
 public:
 
     MultiuserFileSystem(XrdSfsFileSystem *sfs, XrdSysLogger *lp, const char *configfn) :
+        m_umask_mode(-1),
         m_sfs(sfs),
         m_log(lp, "multiuser_")
     {
@@ -455,6 +466,27 @@ public:
                 if (rest[0] != '\0') {
                     authLibParms = &rest[0];
                 }
+            } else if (!strcmp("multiuser.umask", val)) {
+                val = Config.GetWord();
+                if (!val || !val[0]) {
+                    m_log.Emsg("Config", "multiuser.umask must specify a value");
+                    Config.Close();
+                    return false;
+                }
+                char *endptr = NULL;
+                errno = 0;
+                long int umask_val = strtol(val, &endptr, 0);
+                if (errno) {
+                    m_log.Emsg("Config", "multiuser.umask must specify a valid octal value");
+                    Config.Close();
+                    return false;
+                }
+                if ((umask_val < 0) || (umask_val > 0777)) {
+                    m_log.Emsg("Config", "multiuser.umask does not specify a valid umask value");
+                    Config.Close();
+                    return false;
+                }
+                m_umask_mode = umask_val;
             }
         }
         int retc = Config.LastError();
@@ -497,6 +529,13 @@ public:
             m_log.Emsg("Config", "Failed to configure and load authorization plugin");
             return false;
         }
+        if (m_umask_mode != static_cast<mode_t>(-1)) {
+            std::stringstream ss;
+            ss.setf(std::ios_base::showbase);
+            ss << "Setting umask to " << std::oct << std::setfill('0') << std::setw(4) << m_umask_mode;
+            m_log.Emsg("Config", ss.str().c_str());
+            umask(m_umask_mode);
+        }
         return true;
     }
 
@@ -509,7 +548,7 @@ public:
     virtual XrdSfsFile *
     newFile(char *user=0, int monid=0) override {
         std::unique_ptr<XrdSfsFile> chained_file(m_sfs->newFile(user, monid));
-        return new MultiuserFile(std::move(chained_file), m_log, m_authz);
+        return new MultiuserFile(std::move(chained_file), m_log, m_authz, m_umask_mode);
     }
 
     virtual int
@@ -586,6 +625,11 @@ public:
           const XrdSecEntity     *client,
           const char             *opaque = 0) override {
         UserSentry sentry(client, m_log, m_authz.get(), opaque, dirName);
+        // Heuristic - if the createMode is the default from Xrootd, apply umask.
+        if (((Mode & 0777) == S_IRWXU) && (m_umask_mode != static_cast<mode_t>(-1)))
+        {
+            Mode |= 0777;
+        }
         return m_sfs->mkdir(dirName, Mode, out_error, client, opaque);
     }
 
@@ -657,6 +701,7 @@ public:
     }
 
 private:
+    mode_t m_umask_mode;
     XrdSfsFileSystem *m_sfs;  // NOTE: we DO NOT own this pointer; given by the caller.  Do not make unique_ptr!
     XrdSysError m_log;
     std::shared_ptr<XrdAccAuthorize> m_authz;

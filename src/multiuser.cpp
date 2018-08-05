@@ -189,8 +189,8 @@ public:
         if ((m_orig_uid != -1) && (-1 == setfsuid(m_orig_uid))) {
             m_log.Emsg("UserSentry", "Failed to return fsuid to original state", strerror(errno));
         }
-        if ((m_orig_gid != -1) && (setfsgid(m_orig_gid))) {
-            m_log.Emsg("UserSentry", "Failed to return fsuid to original state", strerror(errno));
+        if ((m_orig_gid != -1) && (-1 == setfsgid(m_orig_gid))) {
+            m_log.Emsg("UserSentry", "Failed to return fsgid to original state", strerror(errno));
         }
     }
 

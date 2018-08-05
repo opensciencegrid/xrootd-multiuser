@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.4.0
+Version: 0.4.1
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -54,6 +54,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Sun Aug 05 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.1-1
+- Fix errant message after GID switch.
+
 * Mon Jul 30 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.0-1
 - Add support for POSIX-like umask.
 - Make multiuser plugin compatible with Macaroons.

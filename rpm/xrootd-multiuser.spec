@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.4.1
+Version: 0.4.2
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -54,6 +54,10 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Wed Aug 08 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.2-1
+- Fix chaining of sendfile requests.
+- Fix potentially misleading error message.
+
 * Sun Aug 05 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.1-1
 - Fix errant message after GID switch.
 

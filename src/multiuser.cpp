@@ -205,7 +205,8 @@ private:
 
 class MultiuserFile : public XrdSfsFile {
 public:
-    MultiuserFile(std::unique_ptr<XrdSfsFile> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz, mode_t umask_mode) :
+    MultiuserFile(char *user, int monid, std::unique_ptr<XrdSfsFile> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz, mode_t umask_mode) :
+        XrdSfsFile(user, monid),
         m_umask_mode(umask_mode),
         m_sfs(std::move(sfs)),
         m_log(log),
@@ -244,7 +245,10 @@ public:
               XrdOucErrInfo  &out_error) override
     {
         ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->fctl(cmd, args, out_error);
+        // If out_error is aliased to our internal error object, then do the same
+        // for our chained object.  This way, the chained object is in the same state
+        // as if we didn't exist.
+        return m_sfs->fctl(cmd, args, &out_error == &error ? m_sfs->error : out_error);
     }
 
     virtual const char *
@@ -354,7 +358,8 @@ private:
 
 class MultiuserDirectory : public XrdSfsDirectory {
 public:
-    MultiuserDirectory(std::unique_ptr<XrdSfsDirectory> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz) :
+    MultiuserDirectory(char *user, int monid, std::unique_ptr<XrdSfsDirectory> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz) :
+        XrdSfsDirectory(user, monid),
         m_sfs(std::move(sfs)),
         m_log(log),
         m_authz(authz)
@@ -542,13 +547,13 @@ public:
     virtual XrdSfsDirectory *
     newDir(char *user=nullptr, int monid=0) override {
         std::unique_ptr<XrdSfsDirectory> chained_dir(m_sfs->newDir(user, monid));
-        return new MultiuserDirectory(std::move(chained_dir), m_log, m_authz);
+        return new MultiuserDirectory(user, monid, std::move(chained_dir), m_log, m_authz);
     }
 
     virtual XrdSfsFile *
     newFile(char *user=0, int monid=0) override {
         std::unique_ptr<XrdSfsFile> chained_file(m_sfs->newFile(user, monid));
-        return new MultiuserFile(std::move(chained_file), m_log, m_authz, m_umask_mode);
+        return new MultiuserFile(user, monid, std::move(chained_file), m_log, m_authz, m_umask_mode);
     }
 
     virtual int
@@ -559,7 +564,7 @@ public:
            const XrdSecEntity  *client = 0,
            const char          *opaque = 0) override {
         UserSentry sentry(client, m_log, m_authz.get(), opaque, path);
-        return m_sfs->chksum(Func, csName, path, eInfo, client, opaque);
+        return m_sfs->chksum(Func, csName, path, eInfo , client, opaque);
     }
 
     virtual int

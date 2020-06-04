@@ -50,7 +50,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%{_libdir}/libXrdMultiuser-4.so
+%{_libdir}/libXrdMultiuser-*.so
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog

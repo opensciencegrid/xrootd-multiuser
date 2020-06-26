@@ -1,7 +1,7 @@
 
 Name: xrootd-multiuser
 Version: 0.4.2
-Release: 2%{?dist}
+Release: 10%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
@@ -10,9 +10,15 @@ URL: https://github.com/bbockelm/xrootd-multiuser
 # Generated from:
 # git archive v%{version} --prefix=xrootd-multiuser-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-multiuser-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
+
+%define xrootd_current_major 4
+%define xrootd_next_major 5
+
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: xrootd-server-libs
-BuildRequires: xrootd-server-devel
+BuildRequires: xrootd-server-libs >= 1:%{xrootd_current_major}.0.0-0
+BuildRequires: xrootd-server-libs <  1:%{xrootd_next_major}.0.0-0
+BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-0
+BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-0
 BuildRequires: cmake
 BuildRequires: gcc-c++
 BuildRequires: libcap-devel
@@ -20,7 +26,8 @@ BuildRequires: libcap-devel
 # For %{_unitdir} macro
 BuildRequires: systemd
 
-Requires: xrootd-server
+Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-0
+Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-0
 
 %description
 %{summary}
@@ -54,9 +61,27 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
-* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 0.4.2-2
+* Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 0.4.2-10
+- updating XRootD requirements to only the major version (SOFTWARE-4137)
+
+* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 0.4.2-9
 - Adding XrootD major version to the shared file name
 - building against XrootD-4.12.2 (software-4093)
+
+* Fri Apr 24 2020 Edgar Fajardo <emfajard@ucsd.edu> - 0.4.2-8
+- Rebuild against xrootd 4.12; (SOFTWARE-4063)
+
+* Wed Oct 23 2019 Carl Edquist <edquist@cs.wisc.edu> - 0.4.2-5
+- Rebuild against xrootd 4.11; add version range dependency (SOFTWARE-3830)
+
+* Thu Jul 18 2019 Carl Edquist <edquist@cs.wisc.edu> - 0.4.2-4
+- Rebuild against xrootd 4.10.0 and update versioned dependency (SOFTWARE-3697)
+
+* Wed Apr 10 2019 Mátyás Selmeci <matyas@cs.wisc.edu> - 0.4.2-3
+- Rebuild against xrootd 4.9.1 and add versioned dependency (SOFTWARE-3485)
+
+* Wed Feb 27 2019 Carl Edquist <edquist@cs.wisc.edu> - 0.4.2-2
+- Rebuild against xrootd 4.9.0 (SOFTWARE-3485)
 
 * Wed Aug 08 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.4.2-1
 - Fix chaining of sendfile requests.

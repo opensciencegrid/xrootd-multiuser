@@ -1,7 +1,7 @@
 
 Name: xrootd-multiuser
 Version: 0.4.3
-Release: 2%{?dist}
+Release: 3%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
@@ -12,13 +12,14 @@ URL: https://github.com/bbockelm/xrootd-multiuser
 Source0: %{name}-%{version}.tar.gz
 
 %define xrootd_current_major 4
+%define xrootd_current_minor 12
 %define xrootd_next_major 5
 
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: xrootd-server-libs >= 1:%{xrootd_current_major}.0.0-0
-BuildRequires: xrootd-server-libs <  1:%{xrootd_next_major}.0.0-0
-BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-0
-BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-0
+BuildRequires: xrootd-server-libs >= 1:%{xrootd_current_major}
+BuildRequires: xrootd-server-libs <  1:%{xrootd_next_major}
+BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}
+BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}
 BuildRequires: cmake
 BuildRequires: gcc-c++
 BuildRequires: libcap-devel
@@ -26,8 +27,8 @@ BuildRequires: libcap-devel
 # For %{_unitdir} macro
 BuildRequires: systemd
 
-Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-0
-Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-0
+Requires: xrootd-server >= 1:%{xrootd_current_major}.%{xrootd_current_minor}
+Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-1
 
 %description
 %{summary}
@@ -61,6 +62,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Tue Jul 14 2020 Diego Davila <didavila@ucsd.edu> - 0.4.3-3
+- updating XRootD adding minor version to requirements (SOFTWARE-4137)
+
 * Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 0.4.3-2
 - updating XRootD requirements to only the major version (SOFTWARE-4137)
 

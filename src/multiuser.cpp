@@ -146,15 +146,14 @@ public:
         // TODO: cache the lot of this.
         int buflen = sysconf(_SC_GETPW_R_SIZE_MAX);
         if (buflen < 0) {buflen = 16384;}
-        std::vector<char> buf;
-        buf.reserve(buflen);
+        std::vector<char> buf(buflen);
 
         int retval;
         do {
             retval = getpwnam_r(client->name, &pwd, &buf[0], buflen, &result);
             if ((result == nullptr) && (retval == ERANGE)) {
                 buflen *= 2;
-                buf.reserve(buflen);
+                buf.resize(buflen);
                 continue;
             }
             break;

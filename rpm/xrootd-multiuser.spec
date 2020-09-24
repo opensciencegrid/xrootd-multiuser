@@ -1,7 +1,7 @@
 
 Name: xrootd-multiuser
-Version: 0.4.3
-Release: 3%{?dist}
+Version: 0.4.4
+Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
@@ -62,6 +62,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_unitdir}/xrootd-privileged@.service
 
 %changelog
+* Thu Sep 24 2020 Diego Davila <didavila@ucsd.edu> - 0.4.4-1
+- use vector resize instead of vector reserve to make it work in el8 (SOFTWARE-4257)
+
 * Tue Jul 14 2020 Diego Davila <didavila@ucsd.edu> - 0.4.3-3
 - updating XRootD adding minor version to requirements (SOFTWARE-4137)
 

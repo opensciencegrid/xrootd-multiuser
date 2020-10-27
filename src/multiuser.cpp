@@ -461,7 +461,7 @@ public:
                     return false;
                 }
                 authLib = val;
-                std::vector<char> rest; rest.reserve(2048);
+                std::vector<char> rest(2048);
                 if (!Config.GetRest(&rest[0], 2048)) {
                     m_log.Emsg("Config", "authlib parameters line too long");
                     Config.Close();

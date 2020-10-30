@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.4.4
+Version: 0.4.5
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -60,8 +60,12 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %{_libdir}/libXrdMultiuser-*.so
 %{_unitdir}/xrootd-privileged@.service
+%{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Fri Oct 30 2020 Diego Davila <didavila@ucsd.edu> - 0.4.5-1
+- Adding 60-osg-multiuser.cfg (SOFTWARE-4259)
+
 * Thu Sep 24 2020 Diego Davila <didavila@ucsd.edu> - 0.4.4-1
 - use vector resize instead of vector reserve to make it work in el8 (SOFTWARE-4257)
 

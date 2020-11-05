@@ -50,3 +50,8 @@ install(
   FILES ${CMAKE_SOURCE_DIR}/configs/xrootd-privileged@.service
   DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
 )
+
+install(
+  FILES ${CMAKE_SOURCE_DIR}/configs/60-osg-multiuser.cfg
+  DESTINATION /etc/xrootd/config.d/
+)

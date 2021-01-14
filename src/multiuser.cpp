@@ -4,6 +4,7 @@
 #include "XrdOuc/XrdOucPinPath.hh"
 #include "XrdOuc/XrdOucStream.hh"
 #include "XrdSec/XrdSecEntity.hh"
+#include "XrdSec/XrdSecEntityAttr.hh"
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdVersion.hh"
 
@@ -149,8 +150,17 @@ public:
         std::vector<char> buf(buflen);
 
         int retval;
+        // get the username from the extra attributes in the client
+        std::string username;
+        auto got_token = client->eaAPI->Get("scitokens.name", &username);
+
+        // If we fail to get the username from the scitokens, then get it from
+        // the depreciated way, client->name
+        if (!got_token) {
+            username = client->name;
+        }
         do {
-            retval = getpwnam_r(client->name, &pwd, &buf[0], buflen, &result);
+            retval = getpwnam_r(username.c_str(), &pwd, &buf[0], buflen, &result);
             if ((result == nullptr) && (retval == ERANGE)) {
                 buflen *= 2;
                 buf.resize(buflen);
@@ -159,15 +169,15 @@ public:
             break;
         } while (1);
         if (result == nullptr) {
-            m_log.Emsg("UserSentry", "Failed to lookup UID for username", client->name, strerror(retval));
+            m_log.Emsg("UserSentry", "Failed to lookup UID for username", username.c_str(), strerror(retval));
             return;
         }
         if (pwd.pw_uid < g_minimum_uid) {
-            m_log.Emsg("UserSentry", "Username", client->name, "maps to a system UID; rejecting lookup");
+            m_log.Emsg("UserSentry", "Username", username.c_str(), "maps to a system UID; rejecting lookup");
             return;
         }
         if (pwd.pw_gid < g_minimum_gid) {
-            m_log.Emsg("UserSentry", "Username", client->name, "maps to a system GID; rejecting lookup");
+            m_log.Emsg("UserSentry", "Username", username.c_str(), "maps to a system GID; rejecting lookup");
             return;
         }
 
@@ -175,10 +185,10 @@ public:
             m_log.Emsg("UserSentry", "Unable to get correct capabilities for this thread - filesystem action likely to fail.");
         }
 
-        m_log.Emsg("UserSentry", "Switching FS uid for user", client->name);
+        m_log.Emsg("UserSentry", "Switching FS uid for user", username.c_str());
         m_orig_uid = setfsuid(result->pw_uid);
         if (m_orig_uid < 0) {
-            m_log.Emsg("UserSentry", "Failed to switch FS uid for user", client->name);
+            m_log.Emsg("UserSentry", "Failed to switch FS uid for user", username.c_str());
             return;
         }
         m_orig_gid = setfsgid(result->pw_gid);

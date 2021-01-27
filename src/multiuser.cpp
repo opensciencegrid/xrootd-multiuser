@@ -152,7 +152,7 @@ public:
         int retval;
         // get the username from the extra attributes in the client
         std::string username;
-        auto got_token = client->eaAPI->Get("scitokens.name", &username);
+        auto got_token = client->eaAPI->Get("scitokens.name", username);
 
         // If we fail to get the username from the scitokens, then get it from
         // the depreciated way, client->name

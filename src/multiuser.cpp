@@ -138,7 +138,10 @@ public:
             XrdOucEnv env(opaque, 0, client);
             authz->Access(client, path, AOP_Stat, &env);
         }
-        if (!client->name || !client->name[0]) {
+        // get the username from the extra attributes in the client
+        std::string username;
+        auto got_token = client->eaAPI->Get("request.name", username);
+        if (!got_token && (!client->name || !client->name[0])) {
             log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
             return;
         }
@@ -150,9 +153,6 @@ public:
         std::vector<char> buf(buflen);
 
         int retval;
-        // get the username from the extra attributes in the client
-        std::string username;
-        auto got_token = client->eaAPI->Get("scitokens.name", username);
 
         // If we fail to get the username from the scitokens, then get it from
         // the depreciated way, client->name

@@ -236,6 +236,13 @@ public:
         {
             createMode |= 0777;
         }
+        // We can't support POSC because it only works when running under the
+        // server's uid/gid which will not be the case. So, we turn it off.
+        //
+        if (openMode & SFS_O_POSC)
+           {m_log.Emsg("MultiUse", "POSC disabled for", fileName);
+            openMode &= ~SFS_O_POSC;
+           }
         ErrorSentry err_sentry(error, m_sfs->error, true);
         UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
         return m_sfs->open(fileName, openMode, createMode, client, opaque);

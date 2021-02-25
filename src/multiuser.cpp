@@ -572,7 +572,15 @@ public:
                  XrdOucErrInfo &eInfo,
            const XrdSecEntity  *client = 0,
            const char          *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, path);
+
+        const XrdSecEntity *entP;
+              XrdSecEntity  myEntity;
+              XrdOucEnv    *envP;
+
+        if (!(entP = client) && (envP = eInfo.getEnv())
+        &&  (myEntity.name = envP->Get("request.name"))) entP = &myEntity;
+
+        UserSentry sentry(entP, m_log, m_authz.get(), opaque, path);
         return m_sfs->chksum(Func, csName, path, eInfo , client, opaque);
     }
 

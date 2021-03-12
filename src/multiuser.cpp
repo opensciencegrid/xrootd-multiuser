@@ -240,7 +240,7 @@ public:
         // server's uid/gid which will not be the case. So, we turn it off.
         //
         if (openMode & SFS_O_POSC)
-           {m_log.Emsg("MultiUse", "POSC disabled for", fileName);
+           {m_log.Emsg("MultiUser", "POSC disabled for", fileName);
             openMode &= ~SFS_O_POSC;
            }
         ErrorSentry err_sentry(error, m_sfs->error, true);

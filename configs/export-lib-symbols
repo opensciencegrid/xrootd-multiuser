@@ -1,6 +1,7 @@
 {
 global:
-  XrdSfsGetFileSystem*;
+  XrdOssGetStorageSystem*;
+  XrdOssAddStorageSystem*;
 
 local:
   *;

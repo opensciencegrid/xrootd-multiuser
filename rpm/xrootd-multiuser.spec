@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 0.4.5
+Version: 0.5.0
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -11,9 +11,9 @@ URL: https://github.com/bbockelm/xrootd-multiuser
 # git archive v%{version} --prefix=xrootd-multiuser-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-multiuser-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
-%define xrootd_current_major 4
-%define xrootd_current_minor 12
-%define xrootd_next_major 5
+%define xrootd_current_major 5
+%define xrootd_current_minor 1
+%define xrootd_next_major 6
 
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 BuildRequires: xrootd-server-libs >= 1:%{xrootd_current_major}
@@ -63,6 +63,13 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Fri Mar 12 2021 Carl Edquist <edquist@cs.wisc.edu> - 0.5.0-1
+- Build against xrootd 5.1 (SOFTWARE-4426)
+- Refactor how username is determined to match new behavior in xrootd 5.1 (#17)
+- Check for 'request.name' attribute before failing (#18)
+- Obtain username from passed env when SecEntity object not passed (#19)
+- Disable POSC when set in file open() (#20)
+
 * Fri Oct 30 2020 Diego Davila <didavila@ucsd.edu> - 0.4.5-1
 - Adding 60-osg-multiuser.cfg (SOFTWARE-4259)
 

@@ -133,7 +133,6 @@ public:
             log.Emsg("UserSentry", "No security entity object provided");
             return;
         }
-
         // get the username from the extra attributes in the client
         std::string username;
         auto got_token = client->eaAPI->Get("request.name", username);

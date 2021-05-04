@@ -1,5 +1,5 @@
 
-Multi-user SFS plugin for Xrootd
+Multi-user OSS and CKS (checksum) plugin for Xrootd
 ================================
 
 A filesystem plugin to allow Xrootd to interact with underlying POSIX filesystems as
@@ -13,17 +13,16 @@ Without this plugin, Xrootd will always read and write as the Unix user `xrootd`
 Configuration
 -------------
 
-To configure the multi-user plugin, add the following line to the Xrootd configuration file:
+To configure the multi-user plugin, add the following line to the Xrootd configuration file (XRootD 5.0+):
 
 ```
-xrootd.fslib libXrdMultiuser.so default
+ofs.osslib ++ libXrdMultiuser.so
 ```
 
-The plugin can also be used to manage the `umask` when creating files or directories.  To set a `umask`
-(for example, to `0022`), add the following line to the Xrootd configuration file:
+To enable the checksum (only on XRootD 5.2+):
 
 ```
-multiuser.umask 0022
+ofs.ckslib ++ libXrdMultiuser.so
 ```
 
 Startup

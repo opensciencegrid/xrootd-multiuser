@@ -7,6 +7,8 @@
 #include "XrdSec/XrdSecEntityAttr.hh"
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdVersion.hh"
+#include "XrdOss/XrdOss.hh"
+#include "XrdCks/XrdCksWrapper.hh"
 
 #include <exception>
 #include <memory>
@@ -24,11 +26,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-XrdVERSIONINFO(XrdSfsGetFileSystem, Multiuser);
+XrdVERSIONINFO(XrdOssGetFileSystem, Multiuser);
 
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
-static XrdVERSIONINFODEF(compiledVer, XrdAccTest, XrdVNUMBER, XrdVERSION);
 extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      const char     *cfn,
                                                      const char     *parm,
@@ -126,17 +127,12 @@ static bool check_caps(XrdSysError &log) {
 
 class UserSentry {
 public:
-    UserSentry(const XrdSecEntity *client, XrdSysError &log, XrdAccAuthorize *authz, const char *opaque, const char *path) :
+    UserSentry(const XrdSecEntity *client, XrdSysError &log) :
         m_log(log)
     {
         if (!client) {
             log.Emsg("UserSentry", "No security entity object provided");
             return;
-        }
-        if (authz && (client->sessvar != reinterpret_cast<int *>(1)) && (!client->name || !client->name[0])) {
-            const_cast<XrdSecEntity*>(client)->sessvar = reinterpret_cast<int *>(1);
-            XrdOucEnv env(opaque, 0, client);
-            authz->Access(client, path, AOP_Stat, &env);
         }
         // get the username from the extra attributes in the client
         std::string username;
@@ -145,6 +141,23 @@ public:
             log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
             return;
         }
+
+        // If we fail to get the username from the scitokens, then get it from
+        // the depreciated way, client->name
+        if (!got_token) {
+            username = client->name;
+        }
+        this->Init(username, log);
+    }
+
+    UserSentry(const std::string username, XrdSysError &log) :
+        m_log(log)
+    {
+        this->Init(username, log);
+    }
+
+    void Init(const std::string username, XrdSysError &log)
+    {
         struct passwd pwd, *result = nullptr;
 
         // TODO: cache the lot of this.
@@ -154,11 +167,6 @@ public:
 
         int retval;
 
-        // If we fail to get the username from the scitokens, then get it from
-        // the depreciated way, client->name
-        if (!got_token) {
-            username = client->name;
-        }
         do {
             retval = getpwnam_r(username.c_str(), &pwd, &buf[0], buflen, &result);
             if ((result == nullptr) && (retval == ERANGE)) {
@@ -212,550 +220,606 @@ private:
     XrdSysError &m_log;
 };
 
-class MultiuserFile : public XrdSfsFile {
+class MultiuserFile : public XrdOssDF {
 public:
-    MultiuserFile(char *user, int monid, std::unique_ptr<XrdSfsFile> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz, mode_t umask_mode) :
-        XrdSfsFile(user, monid),
-        m_umask_mode(umask_mode),
-        m_sfs(std::move(sfs)),
-        m_log(log),
-        m_authz(authz)
+    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log) :
+        XrdOssDF(user),
+        m_wrapped(std::move(ossDF)),
+        m_log(log)
     {}
 
     virtual ~MultiuserFile() {}
 
-    virtual int
-    open(const char               *fileName,
-               XrdSfsFileOpenMode  openMode,
-               mode_t              createMode,
-         const XrdSecEntity       *client,
-         const char               *opaque = 0) override
+    int     Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env) override
     {
-        // Heuristic - if the createMode is the default from Xrootd, apply umask.
-        if (((createMode & 0777) == (S_IRUSR | S_IWUSR)) && (m_umask_mode != static_cast<mode_t>(-1)))
-        {
-            createMode |= 0777;
-        }
-        // We can't support POSC because it only works when running under the
-        // server's uid/gid which will not be the case. So, we turn it off.
-        //
-        if (openMode & SFS_O_POSC)
-           {m_log.Emsg("MultiUser", "POSC disabled for", fileName);
-            openMode &= ~SFS_O_POSC;
-           }
-        ErrorSentry err_sentry(error, m_sfs->error, true);
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
-        return m_sfs->open(fileName, openMode, createMode, client, opaque);
+        m_client = env.secEnv();
+        UserSentry sentry(m_client, m_log);
+        return m_wrapped->Open(path, Oflag, Mode, env);
     }
 
-    virtual int
-    close() override
+    int     Fchmod(mode_t mode) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->close();
+        return m_wrapped->Fchmod(mode);
     }
 
-    virtual int
-    fctl(const int            cmd,
-        const char           *args,
-              XrdOucErrInfo  &out_error) override
+    void    Flush() override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        // If out_error is aliased to our internal error object, then do the same
-        // for our chained object.  This way, the chained object is in the same state
-        // as if we didn't exist.
-        return m_sfs->fctl(cmd, args, &out_error == &error ? m_sfs->error : out_error);
+        return m_wrapped->Flush();
     }
 
-    virtual const char *
-    FName() override
+    int     Fstat(struct stat *buf) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->FName();
+        return m_wrapped->Fstat(buf);
     }
 
-    virtual int
-    getMmap(void **Addr, off_t &Size) override
+    int     Fsync() override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->getMmap(Addr, Size);
+        return m_wrapped->Fsync();
     }
 
-    virtual int
-    read(XrdSfsFileOffset   fileOffset,
-         XrdSfsXferSize     amount) override
+    int     Fsync(XrdSfsAio *aiop) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->read(fileOffset, amount);
+        return m_wrapped->Fsync(aiop);
     }
 
-    virtual XrdSfsXferSize
-    read(XrdSfsFileOffset   fileOffset,
-         char              *buffer,
-         XrdSfsXferSize     buffer_size) override
+    int     Ftruncate(unsigned long long size) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->read(fileOffset, buffer, buffer_size);
+        return m_wrapped->Ftruncate(size);
     }
 
-    virtual int
-    read(XrdSfsAio *aioparm) override
+    off_t   getMmap(void **addr) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->read(aioparm);
+        return m_wrapped->getMmap(addr);
     }
 
-    virtual XrdSfsXferSize
-    write(XrdSfsFileOffset   fileOffset,
-          const char        *buffer,
-          XrdSfsXferSize     buffer_size) override
+    int     isCompressed(char *cxidp=0) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->write(fileOffset, buffer, buffer_size);
+        return m_wrapped->isCompressed(cxidp);
     }
 
-    virtual int
-    write(XrdSfsAio *aioparm) override
+    ssize_t pgRead (void* buffer, off_t offset, size_t rdlen,
+                        uint32_t* csvec, uint64_t opts) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->write(aioparm);
+        return m_wrapped->pgRead(buffer, offset, rdlen, csvec, opts);
     }
 
-    virtual int
-    sync() override
+    int     pgRead (XrdSfsAio* aioparm, uint64_t opts) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->sync();
+        return m_wrapped->pgRead(aioparm, opts);
     }
 
-    virtual int
-    sync(XrdSfsAio *aiop) override
+    ssize_t pgWrite(void* buffer, off_t offset, size_t wrlen,
+                        uint32_t* csvec, uint64_t opts) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->sync(aiop);
+        return m_wrapped->pgWrite(buffer, offset, wrlen, csvec, opts);
     }
 
-    virtual int
-    stat(struct stat *buf) override
+    int     pgWrite(XrdSfsAio* aioparm, uint64_t opts) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->stat(buf);
+        return m_wrapped->pgWrite(aioparm, opts);
     }
 
-    virtual int
-    truncate(XrdSfsFileOffset   fileOffset) override
+    ssize_t Read(off_t offset, size_t size) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->truncate(fileOffset);
+        return m_wrapped->Read(offset, size);
     }
 
-    virtual int
-    getCXinfo(char cxtype[4], int &cxrsz) override
+    ssize_t Read(void *buffer, off_t offset, size_t size) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->getCXinfo(cxtype, cxrsz);
+        return m_wrapped->Read(buffer, offset, size);
     }
 
-    virtual int
-    SendData(XrdSfsDio         *sfDio,
-             XrdSfsFileOffset   offset,
-             XrdSfsXferSize     size) override
+    int     Read(XrdSfsAio *aiop) override
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->SendData(sfDio, offset, size);
+        return m_wrapped->Read(aiop);
     }
+
+    ssize_t ReadRaw(void *buffer, off_t offset, size_t size) override
+    {
+        return m_wrapped->ReadRaw(buffer, offset, size);
+    }
+
+    ssize_t ReadV(XrdOucIOVec *readV, int rdvcnt) override
+    {
+        return m_wrapped->ReadV(readV, rdvcnt);
+    }
+
+    ssize_t Write(const void *buffer, off_t offset, size_t size) override
+    {
+        return m_wrapped->Write(buffer, offset, size);
+    }
+
+    int     Write(XrdSfsAio *aiop) override
+    {
+        return m_wrapped->Write(aiop);
+    }
+
+    ssize_t WriteV(XrdOucIOVec *writeV, int wrvcnt) override
+    {
+        return m_wrapped->WriteV(writeV, wrvcnt);
+    }
+
+    int Close(long long *retsz=0) 
+    {
+        return m_wrapped->Close(retsz);
+    }
+
 
 private:
-    mode_t m_umask_mode;
-    std::unique_ptr<XrdSfsFile> m_sfs;
+    std::unique_ptr<XrdOssDF> m_wrapped;
     XrdSysError &m_log;
-    std::shared_ptr<XrdAccAuthorize> m_authz;
+    const XrdSecEntity* m_client;
 };
 
-class MultiuserDirectory : public XrdSfsDirectory {
+class MultiuserDirectory : public XrdOssDF {
 public:
-    MultiuserDirectory(char *user, int monid, std::unique_ptr<XrdSfsDirectory> sfs, XrdSysError &log, std::shared_ptr<XrdAccAuthorize> authz) :
-        XrdSfsDirectory(user, monid),
-        m_sfs(std::move(sfs)),
-        m_log(log),
-        m_authz(authz)
-    {}
+    MultiuserDirectory(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log) :
+        XrdOssDF(user),
+        m_wrappedDir(std::move(ossDF)),
+        m_log(log)
+    {
+    }
 
     virtual ~MultiuserDirectory() {}
 
     virtual int
-    open(const char              *path,
-         const XrdSecEntity      *client = 0,
-         const char              *opaque = 0) override {
-        ErrorSentry err_sentry(error, m_sfs->error);
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, path);
-        return m_sfs->open(path, client, opaque);
+    Opendir(const char *path,
+            XrdOucEnv &env) override 
+    {
+        //ErrorSentry err_sentry(error, m_oss->error);
+        m_client = env.secEnv();
+        UserSentry sentry(m_client, m_log);
+        return m_wrappedDir->Opendir(path, env);
     }
 
-    virtual const char *
-    nextEntry() override
+    int Readdir(char *buff, int blen) 
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->nextEntry();
+        return m_wrappedDir->Readdir(buff, blen);
     }
 
-    virtual int
-    close() override
+    int StatRet(struct stat *statStruct) 
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->close();
+        return m_wrappedDir->StatRet(statStruct);
     }
 
-    virtual const char *
-    FName() override
+    int Close(long long *retsz=0) 
     {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->FName();
+        return m_wrappedDir->Close(retsz);
     }
 
-    virtual int
-    autoStat(struct stat *buf) override
-    {
-        ErrorSentry sentry(error, m_sfs->error);
-        return m_sfs->autoStat(buf);
-    }
 
 private:
-    std::unique_ptr<XrdSfsDirectory> m_sfs;
-    XrdSysError &m_log;
-    std::shared_ptr<XrdAccAuthorize> m_authz;
+    std::unique_ptr<XrdOssDF> m_wrappedDir;
+    XrdSysError m_log;
+    const XrdSecEntity* m_client;
+
 };
 
-class MultiuserFileSystem : public XrdSfsFileSystem {
+class MultiuserFileSystem : public XrdOss {
 public:
 
-    MultiuserFileSystem(XrdSfsFileSystem *sfs, XrdSysLogger *lp, const char *configfn) :
+    MultiuserFileSystem(XrdOss *oss, XrdSysLogger *lp, const char *configfn, XrdOucEnv *envP) :
         m_umask_mode(-1),
-        m_sfs(sfs),
+        m_oss(oss),
+        m_env(envP),
         m_log(lp, "multiuser_")
     {
-        if (!sfs) {
+        if (!oss) {
             throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
         }
         m_log.Say("------ Initializing the multi-user plugin.");
-        if (!Config(lp, configfn)) {
-            throw std::runtime_error("Failed to configure multi-user plugin.");
-        }
     }
 
     virtual ~MultiuserFileSystem() {
-        if (m_handle) {
-            dlclose(m_handle);
-        }
     }
 
-    bool
-    Config(XrdSysLogger *lp, const char *configfn)
+    // Object Allocation Functions
+    //
+    XrdOssDF *newDir(const char *user=0)
     {
-        XrdOucEnv myEnv;
-        XrdOucStream Config(&m_log, getenv("XRDINSTANCE"), &myEnv, "=====> ");
+        // Call the underlying OSS newDir
+        std::unique_ptr<XrdOssDF> wrapped(m_oss->newDir(user));
+        return (MultiuserDirectory *)new MultiuserDirectory(user, std::move(wrapped), m_log);
+    }
 
-        bool set_authorize{false};
-        std::string authLib;
-        std::string authLibParms;
-        int cfgFD = open(configfn, O_RDONLY, 0);
-        if (cfgFD < 0) {
-            m_log.Emsg("Config", errno, "open config file", configfn);
-            return false;
+    XrdOssDF *newFile(const char *user=0)
+    {
+        // Call the underlying OSS newFile
+        std::unique_ptr<XrdOssDF> wrapped(m_oss->newFile(user));
+        return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log);
+    }
+
+    int Chmod(const char * path, mode_t mode, XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        Config.Attach(cfgFD);
-        const char *val;
-        while ((val = Config.GetMyFirstWord())) {
-            if (!strcmp("ofs.authorize", val)) {
-                set_authorize = true;
-                Config.Echo();
-            }
-            else if (!strcmp("ofs.authlib", val)) {
-                val = Config.GetWord();
-                if (!val || !val[0]) {
-                    m_log.Emsg("Config", "ofs.authlib does not specify a library");
-                    Config.Close();
-                    return false;
-                }
-                authLib = val;
-                std::vector<char> rest(2048);
-                if (!Config.GetRest(&rest[0], 2048)) {
-                    m_log.Emsg("Config", "authlib parameters line too long");
-                    Config.Close();
-                    return false;
-                }
-                if (rest[0] != '\0') {
-                    authLibParms = &rest[0];
-                }
-            } else if (!strcmp("multiuser.umask", val)) {
-                val = Config.GetWord();
-                if (!val || !val[0]) {
-                    m_log.Emsg("Config", "multiuser.umask must specify a value");
-                    Config.Close();
-                    return false;
-                }
-                char *endptr = NULL;
-                errno = 0;
-                long int umask_val = strtol(val, &endptr, 0);
-                if (errno) {
-                    m_log.Emsg("Config", "multiuser.umask must specify a valid octal value");
-                    Config.Close();
-                    return false;
-                }
-                if ((umask_val < 0) || (umask_val > 0777)) {
-                    m_log.Emsg("Config", "multiuser.umask does not specify a valid umask value");
-                    Config.Close();
-                    return false;
-                }
-                m_umask_mode = umask_val;
-            }
+        return m_oss->Chmod(path, mode, env);
+    }
+
+    void      Connect(XrdOucEnv &env)
+    {
+        auto client = env.secEnv();
+        UserSentry sentry(client, m_log);
+        m_oss->Connect(env);
+    }
+
+    int       Create(const char *tid, const char *path, mode_t mode, XrdOucEnv &env,
+                         int opts=0)
+    {
+        auto client = env.secEnv();
+        UserSentry sentry(client, m_log);
+        return m_oss->Create(tid, path, mode, env, opts);
+    }
+
+    void      Disc(XrdOucEnv &env)
+    {
+        auto client = env.secEnv();
+        UserSentry sentry(client, m_log);
+        m_oss->Disc(env);
+    }
+
+    void      EnvInfo(XrdOucEnv *env)
+    {
+        // This will be cleaned up automatically
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        int retc = Config.LastError();
-        if (retc) {
-            m_log.Emsg("Config", -retc, "read config file", configfn);
-            Config.Close();
-            return false;
+        m_oss->EnvInfo(env);
+    }
+
+    uint64_t  Features()
+    {
+        return m_oss->Features();
+    }
+
+    int       FSctl(int cmd, int alen, const char *args, char **resp=0)
+    {
+        return m_oss->FSctl(cmd, alen, args, resp);
+    }
+
+    int       Init(XrdSysLogger *lp, const char *cfn)
+    {
+        // Should I init something here?
+        return 0;
+    }
+
+    int       Init(XrdSysLogger *lp, const char *cfn, XrdOucEnv *env)
+    {
+        return Init(lp, cfn);
+    }
+
+    int       Mkdir(const char *path, mode_t mode, int mkpath=0,
+                        XrdOucEnv  *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        Config.Close();
+        return m_oss->Mkdir(path, mode, mkpath, env);
+    }
 
-        if (!set_authorize) {return true;}
-
-        XrdAccAuthorize *(*ep)(XrdSysLogger *, const char *, const char *);
-        if (authLib.empty()) {
-            m_authz.reset(XrdAccDefaultAuthorizeObject(lp, configfn, authLibParms.c_str(), compiledVer));
-        } else {
-            char resolvePath[2048];
-            bool usedAltPath{true};
-            if (!XrdOucPinPath(authLib.c_str(), usedAltPath, resolvePath, 2048)) {
-                m_log.Emsg("Config", "Failed to locate appropriately versioned authlib path for", authLib.c_str());
-                return false;
-            }
-            m_handle = dlopen(resolvePath, RTLD_LOCAL|RTLD_NOW);
-            if (m_handle == nullptr) {
-                m_log.Emsg("Config", "Failed to load", resolvePath, dlerror());
-                return false;
-            }
-            ep = (XrdAccAuthorize *(*)(XrdSysLogger *, const char *, const char *))
-                             (dlsym(m_handle, "XrdAccAuthorizeObject"));
-            if (ep) {
-                m_authz.reset(ep(lp, configfn, authLibParms.c_str()));
-                if (m_authz.get()) {
-                    m_log.Emsg("Config", "Multiuser plugin loaded an authorization object from", resolvePath);
-                }
-            } else {
-                m_log.Emsg("Config", "Failed to resolve symbol XrdAccAuthorizeObject",dlerror());
-            }
+    int       Reloc(const char *tident, const char *path,
+                        const char *cgName, const char *anchor=0)
+    {
+        return m_oss->Reloc(tident, path, cgName, anchor);
+        
+    }
+    
+    int       Remdir(const char *path, int Opts=0, XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        if (!m_authz) {
-            m_log.Emsg("Config", "Failed to configure and load authorization plugin");
-            return false;
+        return m_oss->Remdir(path, Opts, env);
+    }
+
+    int       Rename(const char *oPath, const char *nPath,
+                         XrdOucEnv  *oEnvP=0, XrdOucEnv *nEnvP=0)
+    {
+        // How to handle the renaming?
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (oEnvP) {
+            auto client = oEnvP->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        if (m_umask_mode != static_cast<mode_t>(-1)) {
-            std::stringstream ss;
-            ss.setf(std::ios_base::showbase);
-            ss << "Setting umask to " << std::oct << std::setfill('0') << std::setw(4) << m_umask_mode;
-            m_log.Emsg("Config", ss.str().c_str());
-            umask(m_umask_mode);
+        return m_oss->Rename(oPath, nPath, oEnvP, nEnvP);
+    }
+    
+    int       Stat(const char *path, struct stat *buff,
+                       int opts=0, XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        return true;
+        return m_oss->Stat(path, buff, opts, env);
     }
 
-    virtual XrdSfsDirectory *
-    newDir(char *user=nullptr, int monid=0) override {
-        std::unique_ptr<XrdSfsDirectory> chained_dir(m_sfs->newDir(user, monid));
-        return new MultiuserDirectory(user, monid, std::move(chained_dir), m_log, m_authz);
+    int       Stats(char *buff, int blen)
+    {
+        return m_oss->Stats(buff, blen);
     }
 
-    virtual XrdSfsFile *
-    newFile(char *user=0, int monid=0) override {
-        std::unique_ptr<XrdSfsFile> chained_file(m_sfs->newFile(user, monid));
-        return new MultiuserFile(user, monid, std::move(chained_file), m_log, m_authz, m_umask_mode);
-    }
-
-    virtual int
-    chksum(      csFunc         Func,
-           const char          *csName,
-           const char          *path,
-                 XrdOucErrInfo &eInfo,
-           const XrdSecEntity  *client = 0,
-           const char          *opaque = 0) override {
-
-        const XrdSecEntity *entP;
-              XrdSecEntity  myEntity;
-              XrdOucEnv    *envP;
-
-        if (!(entP = client) && (envP = eInfo.getEnv())
-        &&  (myEntity.name = envP->Get("request.name"))) entP = &myEntity;
-
-        UserSentry sentry(entP, m_log, m_authz.get(), opaque, path);
-        return m_sfs->chksum(Func, csName, path, eInfo , client, opaque);
-    }
-
-    virtual int
-    chmod(const char             *Name,
-                XrdSfsMode        Mode,
-                XrdOucErrInfo    &out_error,
-          const XrdSecEntity     *client,
-          const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
-        return m_sfs->chmod(Name, Mode, out_error, client, opaque);
-    }
-
-    virtual void
-    Disc(const XrdSecEntity   *client = 0) override {
-        // It seems that Xrootd calls this with a different object than elsewhere; to prevent
-        // log spam, add an extra check.
-        if (client && client->name) {
-            UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
-            return m_sfs->Disc(client);
-        } else {
-            return m_sfs->Disc(client);
+    int       StatFS(const char *path, char *buff, int &blen,
+                         XrdOucEnv  *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
+        return m_oss->StatFS(path, buff, blen, env);
+    }
+    
+    int       StatLS(XrdOucEnv &env, const char *path,
+                         char *buff, int &blen)
+    {
+        auto client = env.secEnv();
+        UserSentry sentry(client, m_log);
+        return m_oss->StatLS(env, path, buff, blen);
+    }
+    
+    int       StatPF(const char *path, struct stat *buff, int opts)
+    {
+        return m_oss->StatPF(path, buff, opts);
     }
 
-    virtual void
-    EnvInfo(XrdOucEnv *envP) override {
-        return m_sfs->EnvInfo(envP);
+    int       StatPF(const char *path, struct stat *buff)
+    {
+        return m_oss->StatPF(path, buff, 0);
     }
 
-    virtual int
-    exists(const char                *fileName,
-                 XrdSfsFileExistence &exists_flag,
-                 XrdOucErrInfo       &out_error,
-           const XrdSecEntity        *client,
-           const char                *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, fileName);
-        return m_sfs->exists(fileName, exists_flag, out_error, client, opaque);
+    int       StatVS(XrdOssVSInfo *vsP, const char *sname=0, int updt=0)
+    {
+        return m_oss->StatVS(vsP, sname, updt);
     }
 
-    virtual int
-    fsctl(const int               cmd,
-          const char             *args,
-                XrdOucErrInfo    &out_error,
-          const XrdSecEntity     *client) override {
-        UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
-        return m_sfs->fsctl(cmd, args, out_error);
-    }
-
-    virtual int
-    getStats(char *buff, int blen) override {
-        return m_sfs->getStats(buff, blen);
-    }
-
-    virtual const char *
-    getVersion() override {
-        return m_sfs->getVersion();
-    }
-
-    virtual int
-    mkdir(const char             *dirName,
-                XrdSfsMode        Mode,
-                XrdOucErrInfo    &out_error,
-          const XrdSecEntity     *client,
-          const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, dirName);
-        // Heuristic - if the createMode is the default from Xrootd, apply umask.
-        if (((Mode & 0777) == S_IRWXU) && (m_umask_mode != static_cast<mode_t>(-1)))
-        {
-            Mode |= 0777;
+    int       StatXA(const char *path, char *buff, int &blen,
+                         XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
         }
-        return m_sfs->mkdir(dirName, Mode, out_error, client, opaque);
+        return m_oss->StatXA(path, buff, blen, env);
     }
 
-    virtual int
-    prepare(      XrdSfsPrep       &pargs,
-                  XrdOucErrInfo    &out_error,
-            const XrdSecEntity     *client = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), nullptr, "/");
-        return m_sfs->prepare(pargs, out_error, client);
+    int       StatXP(const char *path, unsigned long long &attr,
+                         XrdOucEnv  *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
+        }
+        return m_oss->StatXP(path, attr, env);
+    }
+    
+    int       Truncate(const char *path, unsigned long long fsize,
+                           XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
+        }
+        return m_oss->Truncate(path, fsize, env);
+    }
+    
+    int       Unlink(const char *path, int Opts=0, XrdOucEnv *env=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr;
+        if (env) {
+            auto client = env->secEnv();
+            sentryPtr.reset(new UserSentry(client, m_log));
+        }
+        return m_oss->Unlink(path, Opts, env);
     }
 
-    virtual int
-    rem(const char             *path,
-              XrdOucErrInfo    &out_error,
-        const XrdSecEntity     *client,
-        const char             *info = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), info, path);
-        return m_sfs->rem(path, out_error, client, info);
+    int       Lfn2Pfn(const char *Path, char *buff, int blen)
+    {
+        return m_oss->Lfn2Pfn(Path, buff, blen);
+    }
+    
+    const char       *Lfn2Pfn(const char *Path, char *buff, int blen, int &rc)
+    {
+        return m_oss->Lfn2Pfn(Path, buff, blen, rc);
     }
 
-    virtual int
-    remdir(const char             *dirName,
-                 XrdOucErrInfo    &out_error,
-           const XrdSecEntity     *client,
-           const char             *info = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), info, dirName);
-        return m_sfs->remdir(dirName, out_error, client, info);
-    }
-
-    virtual int
-    rename(const char             *oldFileName,
-           const char             *newFileName,
-                 XrdOucErrInfo    &out_error,
-           const XrdSecEntity     *client,
-           const char             *infoO = 0,
-           const char             *infoN = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), infoO, oldFileName);
-        return m_sfs->rename(oldFileName, newFileName, out_error, client, infoO, infoN);
-    }
-
-    virtual int
-    stat(const char             *Name,
-               struct stat      *buf,
-               XrdOucErrInfo    &out_error,
-         const XrdSecEntity     *client,
-         const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
-        return m_sfs->stat(Name, buf, out_error, client, opaque);
-    }
-
-    virtual int
-    stat(const char             *Name,
-               mode_t           &mode,
-               XrdOucErrInfo    &out_error,
-         const XrdSecEntity     *client,
-         const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
-        return m_sfs->stat(Name, mode, out_error, client, opaque);
-    }
-
-    virtual int
-    truncate(const char             *Name,
-                   XrdSfsFileOffset fileOffset,
-                   XrdOucErrInfo    &out_error,
-             const XrdSecEntity     *client = 0,
-             const char             *opaque = 0) override {
-        UserSentry sentry(client, m_log, m_authz.get(), opaque, Name);
-        return m_sfs->truncate(Name, fileOffset, out_error, client, opaque);
-    }
 
 private:
     mode_t m_umask_mode;
-    XrdSfsFileSystem *m_sfs;  // NOTE: we DO NOT own this pointer; given by the caller.  Do not make unique_ptr!
+    XrdOss *m_oss;  // NOTE: we DO NOT own this pointer; given by the caller.  Do not make std::unique_ptr!
+    XrdOucEnv *m_env;
     XrdSysError m_log;
     std::shared_ptr<XrdAccAuthorize> m_authz;
-    void *m_handle{nullptr};
+    
+};
+
+/*
+ Multiuser compatible checksum wrapper.  Only available in XRootD 5.2+
+*/
+class MultiuserChecksum : public XrdCksWrapper
+{
+public:
+    MultiuserChecksum(XrdCks &prevPI, XrdSysError *errP, XrdOucEnv *envP) :
+    XrdCksWrapper(prevPI, errP),
+    m_env(envP),
+    m_log(errP)
+    {
+
+    }
+
+    virtual ~MultiuserChecksum() {}
+
+    /*
+        Generate the UserSentry object.
+        The returned UserSentry is the responsibility of the caller.
+    */
+    UserSentry* GenerateUserSentry() {
+        if (m_env) {
+            auto client = m_env->secEnv();
+            if (client) {
+                return new UserSentry(client, *m_log);
+            } else {
+                // Look up the username in the env
+                auto username = m_env->Get("request.name");
+                if (username) {
+                    return new UserSentry(username, *m_log);
+                } else {
+                    return nullptr;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    virtual
+    int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Calc(Xfn, Cks, doSet);
+    }
+
+    virtual
+    int        Calc( const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP, int doSet=1)
+    {
+        (void)pcbP;
+        return Calc(Xfn, Cks, doSet);
+    }
+
+    virtual
+    int        Del(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Del(Xfn, Cks);
+    }
+
+    virtual
+    int        Get(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Get(Xfn, Cks);
+    }
+
+    virtual
+    int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Set(Xfn, Cks, myTime);
+    }
+
+    virtual
+    int        Ver(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Ver(Xfn, Cks);
+    }
+
+    virtual
+    int        Ver(  const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP)
+    {
+        (void)pcbP; 
+        return Ver(Xfn, Cks);
+    }
+
+private:
+    XrdOucEnv *m_env;
+    XrdSysError *m_log;
+
 };
 
 extern "C" {
 
-XrdSfsFileSystem *
-XrdSfsGetFileSystem(XrdSfsFileSystem *native_fs,
-                    XrdSysLogger     *lp,
-                    const char       *configfn)
+/*
+    This function is called when we are wrapping something.  curr_oss is already initialized
+*/
+XrdOss *XrdOssAddStorageSystem2(XrdOss       *curr_oss,
+                                XrdSysLogger *Logger,
+                                const char   *config_fn,
+                                const char   *parms,
+                                XrdOucEnv    *envP)
 {
-    XrdSysError log(lp, "multiuser_");
+
+    XrdSysError log(Logger, "multiuser_");
 
     if (!check_caps(log)) {
         return nullptr;
     }
 
     try {
-        return new MultiuserFileSystem(native_fs, lp, configfn);
+        return new MultiuserFileSystem(curr_oss, Logger, config_fn, envP);
     } catch (std::runtime_error &re) {
         log.Emsg("Initialize", "Encountered a runtime failure:", re.what());
         return nullptr;
     }
 }
 
+/* 
+    This function is called when it is the top level file system and we are not
+    wrapping anything
+*/
+XrdOss *XrdOssGetStorageSystem2(XrdOss       *native_oss,
+                                XrdSysLogger *Logger,
+                                const char   *config_fn,
+                                const char   *parms,
+                                XrdOucEnv    *envP)
+{
+    XrdSysError log(Logger, "multiuser_");
+    if (native_oss->Init(Logger, config_fn, envP) != 0) {
+        log.Emsg("Initialize", "Multiuser failed to initialize the native.");
+    }
+    return XrdOssAddStorageSystem2(native_oss, Logger, config_fn, parms, envP);
 }
+
+
+XrdOss *XrdOssGetStorageSystem(XrdOss       *native_oss,
+                               XrdSysLogger *Logger,
+                               const char   *config_fn,
+                               const char   *parms)
+{
+    XrdSysError log(Logger, "multiuser_");
+    if (native_oss->Init(Logger, config_fn) != 0) {
+        log.Emsg("Initialize", "Multiuser failed to initialize the native.");
+    }
+    return XrdOssAddStorageSystem2(native_oss, Logger, config_fn, parms, nullptr);
+}
+
+XrdCks *XrdCksAdd2(XrdCks      &pPI,
+                   XrdSysError *eDest,
+                   const char  *cFN,
+                   const char  *Parm,
+                   XrdOucEnv   *envP)
+{
+    //XrdSysError log(eDest, "multiuser_checksum_");
+
+    if (!check_caps(*eDest)) {
+        return nullptr;
+    }
+
+    try {
+        return new MultiuserChecksum(pPI, eDest, envP);
+    } catch (std::runtime_error &re) {
+        eDest->Emsg("Initialize", "Encountered a runtime failure:", re.what());
+        return nullptr;
+    }
+
+}
+
+
+}
+
+XrdVERSIONINFO(XrdOssGetStorageSystem,osg-multiuser);
+XrdVERSIONINFO(XrdOssGetStorageSystem2,osg-multiuser);
+XrdVERSIONINFO(XrdOssAddStorageSystem2,osg-multiuser);
+XrdVERSIONINFO(XrdCksAdd2,osg-multiuser);

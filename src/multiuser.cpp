@@ -8,6 +8,7 @@
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdVersion.hh"
 #include "XrdOss/XrdOss.hh"
+#include "XrdCks/XrdCksWrapper.hh"
 
 #include <exception>
 #include <memory>
@@ -140,6 +141,23 @@ public:
             log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
             return;
         }
+
+        // If we fail to get the username from the scitokens, then get it from
+        // the depreciated way, client->name
+        if (!got_token) {
+            username = client->name;
+        }
+        this->Init(username, log);
+    }
+
+    UserSentry(const std::string username, XrdSysError &log) :
+        m_log(log)
+    {
+        this->Init(username, log);
+    }
+
+    void Init(const std::string username, XrdSysError &log)
+    {
         struct passwd pwd, *result = nullptr;
 
         // TODO: cache the lot of this.
@@ -149,11 +167,6 @@ public:
 
         int retval;
 
-        // If we fail to get the username from the scitokens, then get it from
-        // the depreciated way, client->name
-        if (!got_token) {
-            username = client->name;
-        }
         do {
             retval = getpwnam_r(username.c_str(), &pwd, &buf[0], buflen, &result);
             if ((result == nullptr) && (retval == ERANGE)) {
@@ -633,6 +646,99 @@ private:
     
 };
 
+/*
+ Multiuser compatible checksum wrapper.  Only available in XRootD 5.2+
+*/
+class MultiuserChecksum : public XrdCksWrapper
+{
+public:
+    MultiuserChecksum(XrdCks &prevPI, XrdSysError *errP, XrdOucEnv *envP) :
+    XrdCksWrapper(prevPI, errP),
+    m_env(envP),
+    m_log(errP)
+    {
+
+    }
+
+    virtual ~MultiuserChecksum() {}
+
+    /*
+        Generate the UserSentry object.
+        The returned UserSentry is the responsibility of the caller.
+    */
+    UserSentry* GenerateUserSentry() {
+        if (m_env) {
+            auto client = m_env->secEnv();
+            if (client) {
+                return new UserSentry(client, *m_log);
+            } else {
+                // Look up the username in the env
+                auto username = m_env->Get("request.name");
+                if (username) {
+                    return new UserSentry(username, *m_log);
+                } else {
+                    return nullptr;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    virtual
+    int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Calc(Xfn, Cks, doSet);
+    }
+
+    virtual
+    int        Calc( const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP, int doSet=1)
+    {
+        (void)pcbP;
+        return Calc(Xfn, Cks, doSet);
+    }
+
+    virtual
+    int        Del(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Del(Xfn, Cks);
+    }
+
+    virtual
+    int        Get(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Get(Xfn, Cks);
+    }
+
+    virtual
+    int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Set(Xfn, Cks, myTime);
+    }
+
+    virtual
+    int        Ver(  const char *Xfn, XrdCksData &Cks)
+    {
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        return cksPI.Ver(Xfn, Cks);
+    }
+
+    virtual
+    int        Ver(  const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP)
+    {
+        (void)pcbP; 
+        return Ver(Xfn, Cks);
+    }
+
+private:
+    XrdOucEnv *m_env;
+    XrdSysError *m_log;
+
+};
+
 extern "C" {
 
 /*
@@ -689,6 +795,26 @@ XrdOss *XrdOssGetStorageSystem(XrdOss       *native_oss,
     return XrdOssAddStorageSystem2(native_oss, Logger, config_fn, parms, nullptr);
 }
 
+XrdCks *XrdCksAdd2(XrdCks      &pPI,
+                   XrdSysError *eDest,
+                   const char  *cFN,
+                   const char  *Parm,
+                   XrdOucEnv   *envP)
+{
+    //XrdSysError log(eDest, "multiuser_checksum_");
+
+    if (!check_caps(*eDest)) {
+        return nullptr;
+    }
+
+    try {
+        return new MultiuserChecksum(pPI, eDest, envP);
+    } catch (std::runtime_error &re) {
+        eDest->Emsg("Initialize", "Encountered a runtime failure:", re.what());
+        return nullptr;
+    }
+
+}
 
 
 }
@@ -696,3 +822,4 @@ XrdOss *XrdOssGetStorageSystem(XrdOss       *native_oss,
 XrdVERSIONINFO(XrdOssGetStorageSystem,osg-multiuser);
 XrdVERSIONINFO(XrdOssGetStorageSystem2,osg-multiuser);
 XrdVERSIONINFO(XrdOssAddStorageSystem2,osg-multiuser);
+XrdVERSIONINFO(XrdCksAdd2,osg-multiuser);

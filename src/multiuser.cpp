@@ -652,9 +652,8 @@ private:
 class MultiuserChecksum : public XrdCksWrapper
 {
 public:
-    MultiuserChecksum(XrdCks &prevPI, XrdSysError *errP, XrdOucEnv *envP) :
+    MultiuserChecksum(XrdCks &prevPI, XrdSysError *errP) :
     XrdCksWrapper(prevPI, errP),
-    m_env(envP),
     m_log(errP)
     {
 
@@ -666,14 +665,14 @@ public:
         Generate the UserSentry object.
         The returned UserSentry is the responsibility of the caller.
     */
-    UserSentry* GenerateUserSentry() {
-        if (m_env) {
-            auto client = m_env->secEnv();
+    UserSentry* GenerateUserSentry(XrdOucEnv* env) {
+        if (env) {
+            auto client = env->secEnv();
             if (client) {
                 return new UserSentry(client, *m_log);
             } else {
                 // Look up the username in the env
-                auto username = m_env->Get("request.name");
+                auto username = env->Get("request.name");
                 if (username) {
                     return new UserSentry(username, *m_log);
                 } else {
@@ -687,7 +686,7 @@ public:
     virtual
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
     {
-        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
         return cksPI.Calc(Xfn, Cks, doSet);
     }
 
@@ -701,28 +700,28 @@ public:
     virtual
     int        Del(  const char *Xfn, XrdCksData &Cks)
     {
-        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
         return cksPI.Del(Xfn, Cks);
     }
 
     virtual
     int        Get(  const char *Xfn, XrdCksData &Cks)
     {
-        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
         return cksPI.Get(Xfn, Cks);
     }
 
     virtual
     int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
     {
-        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
         return cksPI.Set(Xfn, Cks, myTime);
     }
 
     virtual
     int        Ver(  const char *Xfn, XrdCksData &Cks)
     {
-        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry());
+        std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
         return cksPI.Ver(Xfn, Cks);
     }
 
@@ -734,7 +733,6 @@ public:
     }
 
 private:
-    XrdOucEnv *m_env;
     XrdSysError *m_log;
 
 };
@@ -808,7 +806,7 @@ XrdCks *XrdCksAdd2(XrdCks      &pPI,
     }
 
     try {
-        return new MultiuserChecksum(pPI, eDest, envP);
+        return new MultiuserChecksum(pPI, eDest);
     } catch (std::runtime_error &re) {
         eDest->Emsg("Initialize", "Encountered a runtime failure:", re.what());
         return nullptr;

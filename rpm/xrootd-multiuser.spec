@@ -1,18 +1,18 @@
 
 Name: xrootd-multiuser
-Version: 0.5.0
+Version: 1.0.0
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
 License: BSD
-URL: https://github.com/bbockelm/xrootd-multiuser
+URL: https://github.com/opensciencegrid/xrootd-multiuser
 # Generated from:
 # git archive v%{version} --prefix=xrootd-multiuser-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-multiuser-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
 %define xrootd_current_major 5
-%define xrootd_current_minor 1
+%define xrootd_current_minor 2
 %define xrootd_next_major 6
 
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -63,6 +63,12 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Thu May 06 2021 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-0.2.rc.2
+- Update to 1.0.0 rc2 (SOFTWARE-4599)
+
+* Tue May 04 2021 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.0.0-0.1.rc.1
+- Update to 1.0.0 rc1 (SOFTWARE-4599)
+
 * Fri Mar 12 2021 Carl Edquist <edquist@cs.wisc.edu> - 0.5.0-1
 - Build against xrootd 5.1 (SOFTWARE-4426)
 - Refactor how username is determined to match new behavior in xrootd 5.1 (#17)

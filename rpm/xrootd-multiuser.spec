@@ -63,6 +63,10 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Fri May 07 2021 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1
+- Wrap the OSS filesystem rather than SFS.  Available in XRootD 5.0+
+- Add checksum wrapper, only available in XRootD 5.2+
+
 * Thu May 06 2021 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-0.2.rc.2
 - Update to 1.0.0 rc2 (SOFTWARE-4599)
 

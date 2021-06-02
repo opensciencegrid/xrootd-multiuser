@@ -222,16 +222,22 @@ private:
 
 class MultiuserFile : public XrdOssDF {
 public:
-    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log) :
+    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode) :
         XrdOssDF(user),
         m_wrapped(std::move(ossDF)),
-        m_log(log)
+        m_log(log),
+        m_umask_mode(umask_mode)
     {}
 
     virtual ~MultiuserFile() {}
 
     int     Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env) override
     {
+        if (((Mode & 0777) == (S_IRUSR | S_IWUSR)) && (m_umask_mode != static_cast<mode_t>(-1)))
+        {
+            Mode |= 0777;
+        }
+
         m_client = env.secEnv();
         UserSentry sentry(m_client, m_log);
         return m_wrapped->Open(path, Oflag, Mode, env);
@@ -349,6 +355,7 @@ private:
     std::unique_ptr<XrdOssDF> m_wrapped;
     XrdSysError &m_log;
     const XrdSecEntity* m_client;
+    mode_t m_umask_mode;
 };
 
 class MultiuserDirectory : public XrdOssDF {
@@ -408,11 +415,71 @@ public:
             throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
         }
         m_log.Say("------ Initializing the multi-user plugin.");
+        if (!Config(lp, configfn)) {
+            throw std::runtime_error("Failed to configure multi-user plugin.");
+        }
     }
 
     virtual ~MultiuserFileSystem() {
     }
 
+    bool
+    Config(XrdSysLogger *lp, const char *configfn)
+    {
+        XrdOucEnv myEnv;
+        XrdOucStream Config(&m_log, getenv("XRDINSTANCE"), &myEnv, "=====> ");
+
+        int cfgFD = open(configfn, O_RDONLY, 0);
+        if (cfgFD < 0) {
+            m_log.Emsg("Config", errno, "open config file", configfn);
+            return false;
+        }
+        Config.Attach(cfgFD);
+        const char *val;
+        while ((val = Config.GetMyFirstWord())) {
+            if (!strcmp("multiuser.umask", val)) {
+                val = Config.GetWord();
+                if (!val || !val[0]) {
+                    m_log.Emsg("Config", "multiuser.umask must specify a value");
+                    Config.Close();
+                    return false;
+                }
+                char *endptr = NULL;
+                errno = 0;
+                long int umask_val = strtol(val, &endptr, 0);
+                if (errno) {
+                    m_log.Emsg("Config", "multiuser.umask must specify a valid octal value");
+                    Config.Close();
+                    return false;
+                }
+                if ((umask_val < 0) || (umask_val > 0777)) {
+                    m_log.Emsg("Config", "multiuser.umask does not specify a valid umask value");
+                    Config.Close();
+                    return false;
+                }
+                m_umask_mode = umask_val;
+            }
+        }
+
+        int retc = Config.LastError();
+        if (retc) {
+            m_log.Emsg("Config", -retc, "read config file", configfn);
+            Config.Close();
+            return false;
+        }
+        Config.Close();
+
+        if (m_umask_mode != static_cast<mode_t>(-1)) {
+            std::stringstream ss;
+            ss.setf(std::ios_base::showbase);
+            ss << "Setting umask to " << std::oct << std::setfill('0') << std::setw(4) << m_umask_mode;
+            m_log.Emsg("Config", ss.str().c_str());
+            umask(m_umask_mode);
+        }
+
+        return true;
+
+    }
     // Object Allocation Functions
     //
     XrdOssDF *newDir(const char *user=0)
@@ -426,7 +493,7 @@ public:
     {
         // Call the underlying OSS newFile
         std::unique_ptr<XrdOssDF> wrapped(m_oss->newFile(user));
-        return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log);
+        return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode);
     }
 
     int Chmod(const char * path, mode_t mode, XrdOucEnv *env=0)
@@ -500,6 +567,12 @@ public:
         if (env) {
             auto client = env->secEnv();
             sentryPtr.reset(new UserSentry(client, m_log));
+        }
+
+        // Heuristic - if the createMode is the default from Xrootd, apply umask.
+        if (((mode & 0777) == S_IRWXU) && (m_umask_mode != static_cast<mode_t>(-1)))
+        {
+            mode |= 0777;
         }
         return m_oss->Mkdir(path, mode, mkpath, env);
     }

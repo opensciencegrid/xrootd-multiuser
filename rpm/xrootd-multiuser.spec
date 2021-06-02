@@ -63,7 +63,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
-* Fri June 02 2021 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
+* Fri Jun 02 2021 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
 - Add file mask on creation
 
 * Fri May 07 2021 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1

@@ -828,6 +828,8 @@ XrdOss *XrdOssAddStorageSystem2(XrdOss       *curr_oss,
         return nullptr;
     }
 
+    envP->Export("XRDXROOTD_NOPOSC", "1");
+
     try {
         return new MultiuserFileSystem(curr_oss, Logger, config_fn, envP);
     } catch (std::runtime_error &re) {

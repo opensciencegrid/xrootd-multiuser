@@ -65,6 +65,7 @@ rm -rf $RPM_BUILD_ROOT
 %changelog
 * Fri Jun 02 2021 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
 - Add file mask on creation
+- Disable POSC
 
 * Fri May 07 2021 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1
 - Wrap the OSS filesystem rather than SFS.  Available in XRootD 5.0+

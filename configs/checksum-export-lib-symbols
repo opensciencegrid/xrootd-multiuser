@@ -1,0 +1,8 @@
+{
+global:
+  XrdCksInit*;
+  XrdCksAdd2*;
+
+local:
+  *;
+};

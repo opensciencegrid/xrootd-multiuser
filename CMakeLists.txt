@@ -43,14 +43,10 @@ add_library(XrdMultiuser SHARED src/multiuser.cpp src/MultiuserFileSystem.cc src
 target_link_libraries(XrdMultiuser -ldl ${CAP_LIB} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB} ${LIBCRYPTO_LIBRARIES} ${ZLIB_LIBRARIES})
 set_target_properties(XrdMultiuser PROPERTIES OUTPUT_NAME "XrdMultiuser-${XROOTD_PLUGIN_VERSION}" SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
-add_library(XrdWriteCks SHARED src/XrdChecksum.cc src/XrdChecksumCalc.cc src/XrdChecksumInit.cc)
-target_link_libraries(XrdWriteCks -ldl ${CAP_LIB} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB} ${LIBCRYPTO_LIBRARIES} ${ZLIB_LIBRARIES})
-set_target_properties(XrdWriteCks PROPERTIES OUTPUT_NAME "XrdWriteCks-${XROOTD_PLUGIN_VERSION}" SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/checksum-export-lib-symbols")
-
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 
 install(
-  TARGETS XrdMultiuser XrdWriteCks
+  TARGETS XrdMultiuser
   LIBRARY DESTINATION ${LIB_INSTALL_DIR}
 )
 

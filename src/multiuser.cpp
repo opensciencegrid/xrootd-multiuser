@@ -21,7 +21,7 @@
 #include <sstream>
 #include <iomanip>
 
-
+MultiuserFileSystem* g_multisuer_oss = nullptr;
 
 XrdVERSIONINFO(XrdOssGetFileSystem, Multiuser);
 
@@ -137,12 +137,9 @@ int MultiuserFile::Close(long long *retsz)
         if (close_result == XrdOssOK) {
             // Only write checksum file if close() was successful
             ChecksumManager manager(NULL, &m_log);
-            char pfnbuf[PATH_MAX];
-            int rc;
-            const char *pfn = m_oss->Lfn2Pfn(m_fname.c_str(), pfnbuf, PATH_MAX, rc);
             {
                 UserSentry sentry(m_client, m_log);
-                manager.Set(pfn, *m_state);
+                manager.Set(m_fname.c_str(), *m_state);
             }
             
         }
@@ -194,6 +191,7 @@ public:
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        m_log->Emsg("CalcCks", "Calc checksum");
         return cksPI.Calc(Xfn, Cks, doSet);
     }
 
@@ -201,6 +199,7 @@ public:
     int        Calc( const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP, int doSet=1)
     {
         (void)pcbP;
+        m_log->Emsg("CalkCks", "Calc checksum");
         return Calc(Xfn, Cks, doSet);
     }
 
@@ -215,6 +214,7 @@ public:
     int        Get(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        m_log->Emsg("GetCks", "Getting checksum");
         return cksPI.Get(Xfn, Cks);
     }
 
@@ -222,6 +222,7 @@ public:
     int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        m_log->Emsg("SetCks", "Setting checksum");
         return cksPI.Set(Xfn, Cks, myTime);
     }
 
@@ -229,6 +230,7 @@ public:
     int        Ver(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        m_log->Emsg("VerCks", "Checking checksum");
         return cksPI.Ver(Xfn, Cks);
     }
 
@@ -237,6 +239,14 @@ public:
     {
         (void)pcbP; 
         return Ver(Xfn, Cks);
+    }
+
+    virtual
+    char      *List(const char *Xfn, char *Buff, int Blen, char Sep=' ')
+    {
+        //std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        m_log->Emsg("ListCks", "Listing checksum");
+        return cksPI.List(Xfn, Buff, Blen, Sep);
     }
 
 private:
@@ -265,7 +275,8 @@ XrdOss *XrdOssAddStorageSystem2(XrdOss       *curr_oss,
     envP->Export("XRDXROOTD_NOPOSC", "1");
 
     try {
-        return new MultiuserFileSystem(curr_oss, Logger, config_fn, envP);
+        g_multisuer_oss = new MultiuserFileSystem(curr_oss, Logger, config_fn, envP);
+        return g_multisuer_oss;
     } catch (std::runtime_error &re) {
         log.Emsg("Initialize", "Encountered a runtime failure:", re.what());
         return nullptr;
@@ -323,6 +334,15 @@ XrdCks *XrdCksAdd2(XrdCks      &pPI,
 
 }
 
+XrdCks *XrdCksInit(XrdSysError *eDest,
+                                  const char  *cFN,
+                                  const char  *Parms
+                                  )
+{
+    ChecksumManager *manager = new ChecksumManager(nullptr, eDest);
+    return XrdCksAdd2(*manager, eDest, cFN, Parms, nullptr);
+}
+
 
 }
 
@@ -330,3 +350,4 @@ XrdVERSIONINFO(XrdOssGetStorageSystem,osg-multiuser);
 XrdVERSIONINFO(XrdOssGetStorageSystem2,osg-multiuser);
 XrdVERSIONINFO(XrdOssAddStorageSystem2,osg-multiuser);
 XrdVERSIONINFO(XrdCksAdd2,osg-multiuser);
+XrdVERSIONINFO(XrdCksInit,osg-multiuser);

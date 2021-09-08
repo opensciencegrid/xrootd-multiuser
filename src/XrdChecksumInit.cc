@@ -12,6 +12,9 @@
 
 extern "C" {
 
+XrdVERSIONINFO(XrdCksInit, XrdPosixChecksum)
+XrdVERSIONINFO(XrdCksAdd2, XrdPosixChecksum)
+
 XrdCks *XrdCksInit(XrdSysError *eDest,
                    const char *config_fn,
                    const char *params)
@@ -29,7 +32,7 @@ XrdCks *XrdCksAdd2( XrdCks      &pPI,
                     XrdOucEnv   *envP
                     )
 {
-    XrdCks *cks = new ChecksumManager(&pPI, eDest);
+    XrdCks *cks = new ChecksumManager(&pPI, eDest, envP);
     eDest->Emsg("ChecksumManager", "Initializing checksum manager with config file", cFN);
     cks->Init(cFN);
     return cks;

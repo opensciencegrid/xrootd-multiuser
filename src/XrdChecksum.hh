@@ -67,7 +67,7 @@ private:
 class ChecksumManager : public XrdCksWrapper
 {
 public:
-    ChecksumManager(XrdCks *prevPI, XrdSysError *errP);
+    ChecksumManager(XrdCks *prevPI, XrdSysError *errP, XrdOucEnv *envP=nullptr);
 
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1);
 
@@ -107,6 +107,7 @@ public:
 
 
     int Set(const char *pfn, const ChecksumState &state);
+    int Set(const char *pfn, const char *cksname, const char *chksvalue);
 
 
     virtual ~ChecksumManager() {}
@@ -131,6 +132,10 @@ private:
     std::string m_default_digest;
 
     XrdCks *m_cksPI;
+
+    std::vector<std::string> m_supported_checksums;
+    XrdOucEnv *m_envP;
+    std::string LFN2PFN(const char* lfn);
 };
 
 

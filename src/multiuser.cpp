@@ -22,6 +22,7 @@
 #include <iomanip>
 
 MultiuserFileSystem* g_multisuer_oss = nullptr;
+ChecksumManager* g_checksum_manager = nullptr;
 
 XrdVERSIONINFO(XrdOssGetFileSystem, Multiuser);
 
@@ -71,14 +72,15 @@ private:
 
 
 
-MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, MultiuserFileSystem *oss) :
+MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, MultiuserFileSystem *oss) :
     XrdOssDF(user),
     m_wrapped(std::move(ossDF)),
     m_log(log),
     m_umask_mode(umask_mode),
     m_state(NULL),
     m_nextoff(0),
-    m_oss(oss)
+    m_oss(oss),
+    m_checksum_on_write(checksum_on_write)
 {}
 
 int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env)
@@ -93,7 +95,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
     auto open_result = m_wrapped->Open(path, Oflag, Mode, env);
 
-    if (Oflag & (O_WRONLY | O_RDWR))
+    if ((Oflag & (O_WRONLY | O_RDWR)) && m_checksum_on_write)
     {
         m_state = new ChecksumState(ChecksumManager::ALL);
         m_log.Emsg("Open", "Will create checksums");
@@ -136,10 +138,9 @@ int MultiuserFile::Close(long long *retsz)
         m_state->Finalize();
         if (close_result == XrdOssOK) {
             // Only write checksum file if close() was successful
-            ChecksumManager manager(NULL, &m_log);
             {
                 UserSentry sentry(m_client, m_log);
-                manager.Set(m_fname.c_str(), *m_state);
+                g_checksum_manager->Set(m_fname.c_str(), *m_state);
             }
             
         }
@@ -191,7 +192,6 @@ public:
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
-        m_log->Emsg("CalcCks", "Calc checksum");
         return cksPI.Calc(Xfn, Cks, doSet);
     }
 
@@ -199,7 +199,6 @@ public:
     int        Calc( const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP, int doSet=1)
     {
         (void)pcbP;
-        m_log->Emsg("CalkCks", "Calc checksum");
         return Calc(Xfn, Cks, doSet);
     }
 
@@ -214,7 +213,6 @@ public:
     int        Get(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
-        m_log->Emsg("GetCks", "Getting checksum");
         return cksPI.Get(Xfn, Cks);
     }
 
@@ -222,7 +220,6 @@ public:
     int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
-        m_log->Emsg("SetCks", "Setting checksum");
         return cksPI.Set(Xfn, Cks, myTime);
     }
 
@@ -230,7 +227,6 @@ public:
     int        Ver(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
-        m_log->Emsg("VerCks", "Checking checksum");
         return cksPI.Ver(Xfn, Cks);
     }
 
@@ -245,7 +241,6 @@ public:
     char      *List(const char *Xfn, char *Buff, int Blen, char Sep=' ')
     {
         //std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
-        m_log->Emsg("ListCks", "Listing checksum");
         return cksPI.List(Xfn, Buff, Blen, Sep);
     }
 
@@ -339,7 +334,11 @@ XrdCks *XrdCksInit(XrdSysError *eDest,
                                   const char  *Parms
                                   )
 {
-    ChecksumManager *manager = new ChecksumManager(nullptr, eDest);
+    // ChecksumManager(XrdSysError *erP, int iosz,
+        // XrdVersionInfo &vInfo, bool autoload=false):
+    XrdVERSIONINFODEF(vInfo, ChecksumManager, XrdVNUMBER, XrdVERSION);
+    ChecksumManager *manager = new ChecksumManager(eDest, 65000, vInfo);
+    g_checksum_manager = manager;
     return XrdCksAdd2(*manager, eDest, cFN, Parms, nullptr);
 }
 

@@ -13,7 +13,7 @@
 
 #include "XrdOuc/XrdOucEnv.hh"
 #include "XrdSec/XrdSecEntity.hh"
-#include "XrdCks/XrdCksWrapper.hh"
+#include "XrdCks/XrdCksManager.hh"
 
 
 class XrdSysError;
@@ -64,10 +64,11 @@ private:
 
 };
 
-class ChecksumManager : public XrdCksWrapper
+class ChecksumManager : public XrdCksManager
 {
 public:
-    ChecksumManager(XrdCks *prevPI, XrdSysError *errP, XrdOucEnv *envP=nullptr);
+    ChecksumManager(XrdSysError *erP, int iosz,
+                                  XrdVersionInfo &vInfo, bool autoload=false);
 
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1);
 
@@ -81,7 +82,7 @@ public:
     int        Get(  const char *Xfn, XrdCksData &Cks);
 
     
-    int        Config(const char *Token, char *Line);
+//    int        Config(const char *Token, char *Line);
 
     
     int        Init(const char *ConfigFN, const char *DfltCalc=0);
@@ -90,11 +91,11 @@ public:
     char      *List(const char *Xfn, char *Buff, int Blen, char Sep=' ');
   
 
-    const char      *Name(int seqNum=0);
+//    const char      *Name(int seqNum=0);
 
-    XrdCksCalc *Object(const char *name);
+//    XrdCksCalc *Object(const char *name);
 
-    int        Size( const char  *Name=0);
+//    int        Size( const char  *Name=0);
 
     int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0);
 
@@ -134,7 +135,6 @@ private:
     XrdCks *m_cksPI;
 
     std::vector<std::string> m_supported_checksums;
-    XrdOucEnv *m_envP;
     std::string LFN2PFN(const char* lfn);
 };
 

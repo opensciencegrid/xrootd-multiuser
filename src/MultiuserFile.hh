@@ -18,7 +18,7 @@
 
 class MultiuserFile : public XrdOssDF {
 public:
-    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, MultiuserFileSystem *oss);
+    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, MultiuserFileSystem *oss);
 
     virtual ~MultiuserFile() {
             if (m_state) {delete m_state;}
@@ -135,6 +135,7 @@ private:
     ssize_t m_nextoff;
     std::string m_fname;
     MultiuserFileSystem *m_oss;
+    bool m_checksum_on_write;
 
 };
 

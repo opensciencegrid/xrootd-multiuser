@@ -69,6 +69,7 @@ private:
     XrdOucEnv *m_env;
     XrdSysError m_log;
     std::shared_ptr<XrdAccAuthorize> m_authz;
+    bool m_checksum_on_write;
 
 };
 

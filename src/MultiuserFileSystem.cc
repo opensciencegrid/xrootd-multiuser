@@ -39,7 +39,8 @@ MultiuserFileSystem::MultiuserFileSystem(XrdOss *oss, XrdSysLogger *lp, const ch
     m_umask_mode(-1),
     m_oss(oss),
     m_env(envP),
-    m_log(lp, "multiuser_")
+    m_log(lp, "multiuser_"),
+    m_checksum_on_write(false)
 {
     if (!oss) {
         throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
@@ -89,6 +90,29 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
             }
             m_umask_mode = umask_val;
         }
+
+        // Checksum on write
+        if (!strcmp("multiuser.checksumonwrite", val)) {
+            val = Config.GetWord();
+            if (!val || !val[0]) {
+                m_log.Emsg("Config", "multiuser.checksumonwrite must specify a value, on or off");
+                Config.Close();
+                return false;
+            }
+            if (!strcmp("on", val)) {
+                m_checksum_on_write = true;
+            }
+            else if (!strcmp("off", val)) {
+                m_checksum_on_write = false;
+            }
+            else {
+                std::string errorMsg = "multiuser.checksumonwrite must be either on or off, not: ";
+                errorMsg += val;
+                m_log.Emsg("Config", errorMsg.c_str());
+                Config.Close();
+                return false;
+            }
+        }
     }
 
     int retc = Config.LastError();
@@ -123,7 +147,7 @@ XrdOssDF *MultiuserFileSystem::newFile(const char *user)
 {
     // Call the underlying OSS newFile
     std::unique_ptr<XrdOssDF> wrapped(m_oss->newFile(user));
-    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, this);
+    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, m_checksum_on_write, this);
 }
 
 int MultiuserFileSystem::Chmod(const char * path, mode_t mode, XrdOucEnv *env)

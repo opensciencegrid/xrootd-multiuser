@@ -21,31 +21,14 @@
 extern XrdSysXAttr *XrdSysXAttrActive;
 extern MultiuserFileSystem* g_multisuer_oss;
 
+#define ATTR_PREFIX "XrdCks.Human."
 
-
-
-ChecksumManager::ChecksumManager(XrdCks *prevPI, XrdSysError *errP, XrdOucEnv *envP)
-    : XrdCksWrapper(*prevPI, errP),
-    m_log(*errP),
-    m_envP(envP)
+ChecksumManager::ChecksumManager(XrdSysError *erP, int iosz,
+                                  XrdVersionInfo &vInfo, bool autoload):
+    XrdCksManager::XrdCksManager(erP, iosz, vInfo, autoload),
+    m_log(*erP)
 {
-    m_cksPI = prevPI;
-    m_supported_checksums.push_back("CKSUM");
-    m_supported_checksums.push_back("ADLER32");
-    m_supported_checksums.push_back("CRC32");
-    m_supported_checksums.push_back("MD5");
-    m_supported_checksums.push_back("CVMFS");
-}
 
-/*
- * Note - it is not apparent this is ever used, hence it is
- * just a stub in this implementation.
- */
-
-XrdCksCalc *
-ChecksumManager::Object(const char * name)
-{
-    return NULL;
 }
 
 
@@ -127,7 +110,7 @@ int        ChecksumManager::Calc( const char *lfn, XrdCksData &Cks, int doSet)
     is.close();
 
     state.Finalize();
-    this->Set(pfn.c_str(), state);
+    this->Set(lfn, state);
 
     std::string checksum_value;
 
@@ -165,73 +148,15 @@ int        ChecksumManager::Del(  const char *lfn, XrdCksData &Cks)
                    checksum_name.begin(), ::toupper);
 
     // Prepend XRDCKS-
-    checksum_name = "XRDCKS-" + checksum_name;
+    checksum_name = ATTR_PREFIX + checksum_name;
 
-    int tmp_retval = XrdSysXAttrActive->Del(checksum_name.c_str(), pfn.c_str());
-    return tmp_retval;
-
+    XrdSysXAttrActive->Del(checksum_name.c_str(), pfn.c_str());
+    return XrdCksManager::Del(lfn, Cks);
 }
 
-char      *ChecksumManager::List(const char *lfn, char *Buff, int Blen, char Sep)
+char* ChecksumManager::List(const char *lfn, char *Buff, int Blen, char Sep) 
 {
-    std::string pfn = this->LFN2PFN(lfn);
-    std::stringstream ss;
-    // If lfn is 0, then just list supported checksums
-    if (lfn == 0) {
-        for (const auto &method : m_supported_checksums) // access by reference to avoid copying
-        {  
-            ss << method << Sep;
-        }
-    } else {
-        // Get all attribute names
-        XrdSysXAttr::AList *alist;
-        XrdSysXAttrActive->List(&alist, pfn.c_str());
-
-        // Filter by those that start with the XRDCKS
-        XrdSysXAttr::AList *iter = alist;
-        std::string prefix = "XRDCKS-";
-
-        while (iter) {
-            if (prefix.compare(alist->Name) == 0) {
-                // Skip the first prefix.size() characters of the name
-                ss << alist->Name[prefix.size()] << Sep;
-            }
-            iter = iter->Next;
-        }
-        XrdSysXAttrActive->Free(alist);
-    }
-
-    // Copy the string to the char* Buff
-    std::string result = ss.str();
-    size_t mem_to_copy = (static_cast<unsigned>(Blen) < result.size()) ? Blen : result.size();
-    memcpy(Buff, result.c_str(), mem_to_copy);
-    return Buff;
-}
-
-const char      *ChecksumManager::Name(int seqNum) 
-{
-    switch (seqNum)
-    {
-    case 0:
-        return "md5";
-    case 1:
-        return "adler32";
-    case 2:
-        return "cksum";
-    case 3:
-        return "crc32";
-    default:
-        return NULL;
-    }
-}
-
-int        ChecksumManager::Size( const char  *Name)
-{
-    if (!strcasecmp(Name, "md5")) {return 16;}
-    else if (!strcasecmp(Name, "adler32")) {return 5;}
-    else if (!strcasecmp(Name, "cksum")) {return 5;}
-    else if (!strcasecmp(Name, "crc32")) {return 5;}
-    return -1;
+    return XrdCksManager::List(lfn, Buff, Blen, Sep);
 }
 
 int        ChecksumManager::Set(  const char *lfn, XrdCksData &Cks, int myTime)
@@ -248,35 +173,31 @@ int ChecksumManager::Set(const char *lfn, const char *cksname, const char *chksv
     std::string checksum_name(cksname);
     std::transform(checksum_name.begin(), checksum_name.end(),
                    checksum_name.begin(), ::toupper);
+    
 
     // Prepend XRDCKS-
-    checksum_name = "XRDCKS-" + checksum_name;
+    checksum_name = ATTR_PREFIX + checksum_name;
 
     std::string pfn = this->LFN2PFN(lfn);
 
     // Set the checksum
-    int tmp_retval = XrdSysXAttrActive->Set(checksum_name.c_str(), 
+    XrdSysXAttrActive->Set(checksum_name.c_str(), 
                                                 chksvalue, 
                                                 strlen(chksvalue), 
                                                 pfn.c_str());
-    return tmp_retval;
+
+    checksum_name = cksname;
+    std::transform(checksum_name.begin(), checksum_name.end(),
+                   checksum_name.begin(), ::tolower);
+    XrdCksData cks;
+    strcpy(cks.Name, checksum_name.c_str());
+    cks.Set(chksvalue, strlen(chksvalue));
+    return XrdCksManager::Set(pfn.c_str(), cks);
 }
 
 int        ChecksumManager::Ver(  const char *lfn, XrdCksData &Cks)
 {
-    std::string pfn = this->LFN2PFN(lfn);
-    XrdCksData cks_on_disk;
-    int rc = Get(pfn.c_str(), cks_on_disk);
-    if (rc)
-    {
-        rc = Calc(pfn.c_str(), cks_on_disk, 1);
-        if (rc)
-        {
-            return rc;
-        }
-    }
-
-    return !memcmp(cks_on_disk.Value, Cks.Value, Cks.Length) ? 0 : 1;
+    return XrdCksManager::Ver(lfn, Cks);
 }
 
 int        ChecksumManager::Ver(  const char *Xfn, XrdCksData &Cks, XrdCksPCB *pcbP)
@@ -292,51 +213,18 @@ ChecksumManager::Init(const char * config_fn, const char *default_checksum)
     {
         m_default_digest = default_checksum;
     }
-    return 1;
+
+    return XrdCksManager::Init(config_fn, default_checksum);
 }
 
 
 int
 ChecksumManager::Get(const char *lfn, XrdCksData &cks)
 {
-    const char *requested_checksum = cks.Name ? cks.Name : m_default_digest.c_str();
-    if (!strlen(requested_checksum))
-    {
-        requested_checksum = "adler32";
-    }
-
-    // Convert the lfn to pfn
     std::string pfn = this->LFN2PFN(lfn);
-
-    char buf[512];
-    // Prepend the checksum name with the XRDCKS-
-    std::string checksum_name = "XRDCKS-" + std::string(cks.Name);
-    std::transform(checksum_name.begin(), checksum_name.end(), checksum_name.begin(), ::toupper);
-    int retval = XrdSysXAttrActive->Get(checksum_name.c_str(), buf, 511, pfn.c_str());
-    if (retval > 0) {
-        buf[retval] = '\0';
-    }
-    //if (retval <= 0) {
-        std::stringstream ss2;
-        ss2 << "Got checksum (" << requested_checksum << ":" << buf << ") for " << pfn << ": retval = " << retval;
-        m_log.Emsg("Get", ss2.str().c_str());
-    //}
-    int set_retval = cks.Set(buf, strlen(buf));
-    ss2.clear();
-    ss2 << "Set retval: " << set_retval;
-    m_log.Emsg("Get", ss2.str().c_str());
-
-    return cks.Length;
-    
+    return XrdCksManager::Get(pfn.c_str(), cks);
 }
 
-
-int
-ChecksumManager::Config(const char *token, char *line)
-{
-    m_log.Emsg("Config", "ChecksumManager config variable passed", token, line);
-    return 1;
-}
 
 std::string ChecksumManager::LFN2PFN(const char* lfn) {
     std::string pfn;

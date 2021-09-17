@@ -72,7 +72,7 @@ private:
 
 
 
-MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, MultiuserFileSystem *oss) :
+MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss) :
     XrdOssDF(user),
     m_wrapped(std::move(ossDF)),
     m_log(log),
@@ -80,7 +80,8 @@ MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, 
     m_state(NULL),
     m_nextoff(0),
     m_oss(oss),
-    m_checksum_on_write(checksum_on_write)
+    m_checksum_on_write(checksum_on_write),
+    m_digests(digests)
 {}
 
 int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env)
@@ -97,7 +98,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
     if ((Oflag & (O_WRONLY | O_RDWR)) && m_checksum_on_write)
     {
-        m_state = new ChecksumState(ChecksumManager::ALL);
+        m_state = new ChecksumState(m_digests);
         m_log.Emsg("Open", "Will create checksums");
     } else {
         m_log.Emsg("Open", "Will not create checksum");

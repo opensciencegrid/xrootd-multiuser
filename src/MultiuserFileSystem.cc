@@ -40,7 +40,8 @@ MultiuserFileSystem::MultiuserFileSystem(XrdOss *oss, XrdSysLogger *lp, const ch
     m_oss(oss),
     m_env(envP),
     m_log(lp, "multiuser_"),
-    m_checksum_on_write(false)
+    m_checksum_on_write(false),
+    m_digests(0)
 {
     if (!oss) {
         throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
@@ -113,6 +114,32 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
                 return false;
             }
         }
+        if (!strcmp("xrootd.chksum", val)) {
+            val = Config.GetWord();
+            while (val) {
+                if (!strcmp("md5", val)) {
+                    m_digests |= ChecksumManager::MD5;
+                }
+                else if (!strcmp("cvmfs", val)) {
+                    m_digests |= ChecksumManager::CVMFS;
+                }
+                else if (!strcmp("crc32", val)) {
+                    m_digests |= ChecksumManager::CRC32;
+                }
+                else if (!strcmp("adler32", val)) {
+                    m_digests |= ChecksumManager::ADLER32;
+                }
+                else if (!strcmp("cksum", val)) {
+                    m_digests |= ChecksumManager::CKSUM;
+                }
+                else {
+                    std::string errorMsg = "Unreconginzied chksum value: ";
+                    errorMsg += val;
+                    m_log.Emsg("Config", errorMsg.c_str());
+                }
+                val = Config.GetWord();
+            }
+        }
     }
 
     int retc = Config.LastError();
@@ -147,7 +174,7 @@ XrdOssDF *MultiuserFileSystem::newFile(const char *user)
 {
     // Call the underlying OSS newFile
     std::unique_ptr<XrdOssDF> wrapped(m_oss->newFile(user));
-    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, m_checksum_on_write, this);
+    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, m_checksum_on_write, m_digests, this);
 }
 
 int MultiuserFileSystem::Chmod(const char * path, mode_t mode, XrdOucEnv *env)

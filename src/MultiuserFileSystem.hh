@@ -70,6 +70,7 @@ private:
     XrdSysError m_log;
     std::shared_ptr<XrdAccAuthorize> m_authz;
     bool m_checksum_on_write;
+    unsigned m_digests;
 
 };
 

@@ -3,6 +3,7 @@ global:
   XrdOssGetStorageSystem*;
   XrdOssAddStorageSystem*;
   XrdCksAdd2*;
+  XrdCksInit*;
 
 local:
   *;

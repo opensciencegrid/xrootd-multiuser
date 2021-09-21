@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.0.0
+Version: 2.0.1
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -63,6 +63,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Tue Sep 21 2021 Derek Weitzel <dweitzel@unl.edu> - 2.0.1-1
+- Fix the bogus date in the spec file
+
 * Tue Sep 14 2021 Derek Weitzel <dweitzel@unl.edu> - 2.0.0-1
 - Add checksum library that saves to extended attributes
 - Add multiuser.checksumonwrite option to turn on checksumming the file while it is being written.

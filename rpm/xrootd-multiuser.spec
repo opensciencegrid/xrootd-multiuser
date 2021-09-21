@@ -1,7 +1,7 @@
 
 Name: xrootd-multiuser
 Version: 2.0.1
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
@@ -23,6 +23,8 @@ BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}
 BuildRequires: cmake
 BuildRequires: gcc-c++
 BuildRequires: libcap-devel
+BuildRequires: openssl-devel
+BuildRequires: zlib-devel
 %{?systemd_requires}
 # For %{_unitdir} macro
 BuildRequires: systemd
@@ -63,6 +65,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Tue Sep 21 2021 Carl Edquist <edquist@cs.wisc.edu> - 2.0.1-2
+- Add missing build deps: openssl-devel, zlib-devel
+
 * Tue Sep 21 2021 Derek Weitzel <dweitzel@unl.edu> - 2.0.1-1
 - Fix the bogus date in the spec file
 

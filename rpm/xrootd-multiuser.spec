@@ -67,7 +67,7 @@ rm -rf $RPM_BUILD_ROOT
 - Add checksum library that saves to extended attributes
 - Add multiuser.checksumonwrite option to turn on checksumming the file while it is being written.
 
-* Fri Jun 02 2021 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
+* Wed Jun 02 2021 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
 - Add file mask on creation
 - Disable POSC
 

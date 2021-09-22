@@ -115,6 +115,7 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
             }
         }
         if (!strcmp("xrootd.chksum", val)) {
+            m_digests = 0;
             val = Config.GetWord();
             while (val) {
                 if (!strcmp("md5", val)) {

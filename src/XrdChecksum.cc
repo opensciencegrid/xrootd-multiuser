@@ -230,14 +230,17 @@ std::string ChecksumManager::LFN2PFN(const char* lfn) {
     std::string pfn;
     char pfnbuff[MAXPATHLEN];
     int rc = 0;
-    if (g_multisuer_oss->Lfn2Pfn(lfn, pfnbuff, MAXPATHLEN, rc) == 0)
+    char* pfn_cstr = g_multisuer_oss->Lfn2Pfn(lfn, pfnbuff, MAXPATHLEN, rc);
+
+    if (pfn_cstr == 0)
     {
         std::stringstream ss;
         ss << "Failed to translate lfn to pfn for path: " << lfn << " errno: " << rc;
         m_log.Emsg("Get", ss.str().c_str());
         return pfn;
     }
-    pfn = pfnbuff;
+       
+    pfn = pfn_cstr;
     return pfn;
 }
 

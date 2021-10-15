@@ -230,7 +230,7 @@ std::string ChecksumManager::LFN2PFN(const char* lfn) {
     std::string pfn;
     char pfnbuff[MAXPATHLEN];
     int rc = 0;
-    char* pfn_cstr = g_multisuer_oss->Lfn2Pfn(lfn, pfnbuff, MAXPATHLEN, rc);
+    const char* pfn_cstr = g_multisuer_oss->Lfn2Pfn(lfn, pfnbuff, MAXPATHLEN, rc);
 
     if (pfn_cstr == 0)
     {

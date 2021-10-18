@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.0.2
+Version: 2.0.3
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -65,6 +65,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Mon Oct 18 2021 Derek Weitzel <dweitzel@unl.edu> - 2.0.3-1
+- Fix bug in lfn2pfn function
+
 * Thu Sep 23 2021 Derek Weitzel <dweitzel@unl.edu> - 2.0.2-1
 - Allow overwrite of digests read from xrootd.chksum in continued config files
 

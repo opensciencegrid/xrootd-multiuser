@@ -95,6 +95,7 @@ human_readable_evp(const unsigned char *evp, size_t length)
 ChecksumState::ChecksumState(unsigned digests)
     : m_digests(digests),
       m_cksum(0),
+      m_crc32(crc32(0, NULL, 0)),
       m_adler32(adler32(0, NULL, 0)),
       m_md5_length(0),
       m_cur_chunk_bytes(0),

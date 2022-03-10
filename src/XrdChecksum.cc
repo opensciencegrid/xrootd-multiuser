@@ -99,7 +99,7 @@ int        ChecksumManager::Calc( const char *lfn, XrdCksData &Cks, int doSet)
 
     const static int buffer_size = 256*1024;
     std::vector<char> read_buffer;
-    read_buffer.reserve(buffer_size);
+    read_buffer.resize(buffer_size);
 
     // Read through the file, checksumming as we go
     while(!is.eof()) {

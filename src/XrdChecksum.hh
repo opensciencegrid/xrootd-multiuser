@@ -39,8 +39,8 @@ private:
     ChecksumState & operator=(ChecksumState const &);
 
     const unsigned m_digests;
-    uint32_t m_crc32;
     uint32_t m_cksum;
+    uint32_t m_crc32;
     uint32_t m_adler32;
 
     unsigned m_md5_length;

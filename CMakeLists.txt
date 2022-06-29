@@ -51,7 +51,7 @@ install(
 )
 
 install(
-  FILES ${CMAKE_SOURCE_DIR}/configs/xrootd-privileged@.service
+  FILES ${CMAKE_SOURCE_DIR}/configs/xrootd-privileged@.service ${CMAKE_SOURCE_DIR}/configs/cmsd-privileged@.service
   DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
 )
 

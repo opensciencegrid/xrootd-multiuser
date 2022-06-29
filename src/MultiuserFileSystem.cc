@@ -184,6 +184,7 @@ int MultiuserFileSystem::Chmod(const char * path, mode_t mode, XrdOucEnv *env)
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EPERM;
     }
     return m_oss->Chmod(path, mode, env);
 }
@@ -192,6 +193,7 @@ void      MultiuserFileSystem::Connect(XrdOucEnv &env)
 {
     auto client = env.secEnv();
     UserSentry sentry(client, m_log);
+    if (!sentry.IsValid()) return;
     m_oss->Connect(env);
 }
 
@@ -200,6 +202,7 @@ int       MultiuserFileSystem::Create(const char *tid, const char *path, mode_t 
 {
     auto client = env.secEnv();
     UserSentry sentry(client, m_log);
+    if (!sentry.IsValid()) return -EACCES;
     return m_oss->Create(tid, path, mode, env, opts);
 }
 
@@ -207,6 +210,7 @@ void      MultiuserFileSystem::Disc(XrdOucEnv &env)
 {
     auto client = env.secEnv();
     UserSentry sentry(client, m_log);
+    if (!sentry.IsValid()) return;
     m_oss->Disc(env);
 }
 
@@ -217,6 +221,7 @@ void      MultiuserFileSystem::EnvInfo(XrdOucEnv *env)
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return;
     }
     m_oss->EnvInfo(env);
 }
@@ -249,6 +254,7 @@ int       MultiuserFileSystem::Mkdir(const char *path, mode_t mode, int mkpath,
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
 
     // Heuristic - if the createMode is the default from Xrootd, apply umask.
@@ -272,6 +278,7 @@ int       MultiuserFileSystem::Remdir(const char *path, int Opts, XrdOucEnv *env
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->Remdir(path, Opts, env);
 }
@@ -284,6 +291,7 @@ int       MultiuserFileSystem::Rename(const char *oPath, const char *nPath,
     if (oEnvP) {
         auto client = oEnvP->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->Rename(oPath, nPath, oEnvP, nEnvP);
 }
@@ -292,9 +300,16 @@ int       MultiuserFileSystem::Stat(const char *path, struct stat *buff,
                     int opts, XrdOucEnv *env)
 {
     std::unique_ptr<UserSentry> sentryPtr;
+    std::unique_ptr<DacOverrideSentry> overridePtr;
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
+    } else if (UserSentry::IsCmsd()) {
+        // The cmsd must be able to override the access control as it needs
+        // the ability to advertise the availability of any existing file.
+        overridePtr.reset(new DacOverrideSentry(m_log));
+        if (!overridePtr->IsValid()) return -EACCES;
     }
     return m_oss->Stat(path, buff, opts, env);
 }
@@ -311,6 +326,7 @@ int       MultiuserFileSystem::StatFS(const char *path, char *buff, int &blen,
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->StatFS(path, buff, blen, env);
 }
@@ -320,6 +336,7 @@ int       MultiuserFileSystem::StatLS(XrdOucEnv &env, const char *path,
 {
     auto client = env.secEnv();
     UserSentry sentry(client, m_log);
+    if (!sentry.IsValid()) return -EACCES;
     return m_oss->StatLS(env, path, buff, blen);
 }
 
@@ -345,6 +362,7 @@ int       MultiuserFileSystem::StatXA(const char *path, char *buff, int &blen,
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->StatXA(path, buff, blen, env);
 }
@@ -356,6 +374,7 @@ int       MultiuserFileSystem::StatXP(const char *path, unsigned long long &attr
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->StatXP(path, attr, env);
 }
@@ -367,6 +386,7 @@ int       MultiuserFileSystem::Truncate(const char *path, unsigned long long fsi
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->Truncate(path, fsize, env);
 }
@@ -377,6 +397,7 @@ int       MultiuserFileSystem::Unlink(const char *path, int Opts, XrdOucEnv *env
     if (env) {
         auto client = env->secEnv();
         sentryPtr.reset(new UserSentry(client, m_log));
+        if (!sentryPtr->IsValid()) return -EACCES;
     }
     return m_oss->Unlink(path, Opts, env);
 }

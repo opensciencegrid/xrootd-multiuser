@@ -1,0 +1,23 @@
+[Unit]
+Description=XRootD cmsd deamon instance %I
+Documentation=man:ccmsd(8)
+Documentation=http://xrootd.org/docs.html
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+# Note "-R xrootd" here instructs xrootd to drop privileges to the xrootd Unix user.
+ExecStart=/usr/bin/cmsd -l /var/log/xrootd/cmsd.log -c /etc/xrootd/xrootd-%i.cfg -k fifo -s /var/run/xrootd/cmsd-%i.pid -n %i -R xrootd
+Type=simple
+Restart=on-abort
+RestartSec=0
+KillMode=control-group
+LimitNOFILE=65536
+WorkingDirectory=/var/spool/xrootd
+
+# These provide cmsd with the ability to override read permissions to advertise file availability.
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE
+Capabilities=CAP_SETGID+p CAP_SETUID+p
+
+[Install]
+RequiredBy=multi-user.target

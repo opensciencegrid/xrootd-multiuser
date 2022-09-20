@@ -24,6 +24,8 @@
 MultiuserFileSystem* g_multisuer_oss = nullptr;
 ChecksumManager* g_checksum_manager = nullptr;
 
+bool UserSentry::m_is_cmsd = false;
+
 XrdVERSIONINFO(XrdOssGetFileSystem, Multiuser);
 
 // The status-quo to retrieve the default object is to copy/paste the
@@ -34,6 +36,67 @@ extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      XrdVersionInfo &myVer);
 
 
+bool UserSentry::ConfigCaps(XrdSysError &log, XrdOucEnv *envP) {
+
+    char *argv0 = nullptr, *myProg = nullptr;
+    XrdOucEnv *xrdEnvP = envP ? static_cast<XrdOucEnv *>(envP->GetPtr("xrdEnv*")) : nullptr;
+    if (xrdEnvP && (argv0 = static_cast<char *>(xrdEnvP->GetPtr("argv[0]")))) {
+        auto retc = strlen(argv0);
+        while(retc--) if (argv0[retc] == '/') break;
+        myProg = &argv0[retc+1];
+    }
+    m_is_cmsd = myProg && !strcmp(myProg, "cmsd");
+
+    // See if we have the appropriate capabilities to run this plugin.
+    cap_t caps = cap_get_proc();
+    if (caps == NULL) {
+        log.Emsg("Initialize", "Failed to query daemon thread's capabilities", strerror(errno));
+        return false;
+    }
+    cap_value_t cap_list[2];
+    int caps_to_set = 0;
+    cap_flag_value_t test_flag = CAP_CLEAR;
+    // We must be at least permitted to acquire the needed capabilities.
+    cap_get_flag(caps, CAP_SETUID, CAP_PERMITTED, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("check_caps", "CAP_SETUID not in daemon's permitted set");
+        cap_free(caps);
+        return false;
+    }
+    cap_get_flag(caps, CAP_SETGID, CAP_PERMITTED, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("check_caps", "CAP_SETGID not in daemon's permitted set");
+        cap_free(caps);
+        return false;
+    }
+
+    // Determine which new capabilities are needed to be added to the effective set.
+    cap_get_flag(caps, CAP_SETUID, CAP_EFFECTIVE, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        //log.Emsg("Initialize", "Will request effective capability for CAP_SETUID");
+        cap_list[caps_to_set] = CAP_SETUID;
+        caps_to_set++;
+    }
+    cap_get_flag(caps, CAP_SETGID, CAP_EFFECTIVE, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        //log.Emsg("Initialize", "Will request effective capability for CAP_SETGID");
+        cap_list[caps_to_set] = CAP_SETGID;
+        caps_to_set++;
+    }
+
+    if (caps_to_set && cap_set_flag(caps, CAP_EFFECTIVE, caps_to_set, cap_list, CAP_SET) == -1) {
+        log.Emsg("Initialize", "Failed to add capabilities to the requested list.");
+        cap_free(caps);
+        return false;
+    }
+    if (caps_to_set && (cap_set_proc(caps) == -1)) {
+        log.Emsg("Initialize", "Failed to acquire necessary capabilities for thread");
+        cap_free(caps);
+        return false;
+    }
+    cap_free(caps);
+    return true;
+};
 
 
 class ErrorSentry
@@ -70,8 +133,6 @@ private:
 };
 
 
-
-
 MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss) :
     XrdOssDF(user),
     m_wrapped(std::move(ossDF)),
@@ -93,6 +154,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
     m_fname = path;
     m_client = env.secEnv();
     UserSentry sentry(m_client, m_log);
+    if (!sentry.IsValid()) return -EACCES;
 
     auto open_result = m_wrapped->Open(path, Oflag, Mode, env);
 
@@ -117,7 +179,7 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
         std::stringstream ss;
         ss << "Out-of-order writes not supported while running checksum. " << m_fname;
         m_log.Emsg("Write", ss.str().c_str());
-        return ENOTSUP;
+        return -ENOTSUP;
     }
 
     auto result = m_wrapped->Write(buffer, offset, size);
@@ -141,7 +203,9 @@ int MultiuserFile::Close(long long *retsz)
             // Only write checksum file if close() was successful
             {
                 UserSentry sentry(m_client, m_log);
-                g_checksum_manager->Set(m_fname.c_str(), *m_state);
+                if (sentry.IsValid()) {
+                    g_checksum_manager->Set(m_fname.c_str(), *m_state);
+                }
             }
             
         }
@@ -193,6 +257,7 @@ public:
     int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        if (!sentryPtr->IsValid()) return -EACCES;
         return cksPI.Calc(Xfn, Cks, doSet);
     }
 
@@ -207,6 +272,7 @@ public:
     int        Del(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        if (!sentryPtr->IsValid()) return -EACCES;
         return cksPI.Del(Xfn, Cks);
     }
 
@@ -214,6 +280,7 @@ public:
     int        Get(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        if (!sentryPtr->IsValid()) return -EACCES;
         return cksPI.Get(Xfn, Cks);
     }
 
@@ -221,6 +288,7 @@ public:
     int        Set(  const char *Xfn, XrdCksData &Cks, int myTime=0)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        if (!sentryPtr->IsValid()) return -EACCES;
         return cksPI.Set(Xfn, Cks, myTime);
     }
 
@@ -228,6 +296,7 @@ public:
     int        Ver(  const char *Xfn, XrdCksData &Cks)
     {
         std::unique_ptr<UserSentry> sentryPtr(GenerateUserSentry(Cks.envP));
+        if (!sentryPtr->IsValid()) return -EACCES;
         return cksPI.Ver(Xfn, Cks);
     }
 
@@ -264,7 +333,7 @@ XrdOss *XrdOssAddStorageSystem2(XrdOss       *curr_oss,
 
     XrdSysError log(Logger, "multiuser_");
 
-    if (!check_caps(log)) {
+    if (!UserSentry::ConfigCaps(log, envP)) {
         return nullptr;
     }
 
@@ -317,7 +386,7 @@ XrdCks *XrdCksAdd2(XrdCks      &pPI,
 {
     //XrdSysError log(eDest, "multiuser_checksum_");
 
-    if (!check_caps(*eDest)) {
+    if (!UserSentry::ConfigCaps(*eDest, envP)) {
         return nullptr;
     }
 

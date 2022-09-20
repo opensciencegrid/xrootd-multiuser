@@ -25,56 +25,41 @@
 static const int g_minimum_uid = 500;
 static const int g_minimum_gid = 500;
 
-static bool check_caps(XrdSysError &log) {
-    // See if we have the appropriate capabilities to run this plugin.
-    cap_t caps = cap_get_proc();
-    if (caps == NULL) {
-        log.Emsg("Initialize", "Failed to query xrootd daemon thread's capabilities", strerror(errno));
-        return false;
-    }
-    cap_value_t cap_list[2];
-    int caps_to_set = 0;
-    cap_flag_value_t test_flag = CAP_CLEAR;
-    // We must be at least permitted to acquire the needed capabilities.
-    cap_get_flag(caps, CAP_SETUID, CAP_PERMITTED, &test_flag);
-    if (test_flag == CAP_CLEAR) {
-        log.Emsg("check_caps", "CAP_SETUID not in xrootd daemon's permitted set");
-        cap_free(caps);
-        return false;
-    }
-    cap_get_flag(caps, CAP_SETGID, CAP_PERMITTED, &test_flag);
-    if (test_flag == CAP_CLEAR) {
-       log.Emsg("check_caps", "CAP_SETGID not in xrootd daemon's permitted set");
-        cap_free(caps);
-       return false;
+
+/**
+ * Note: originally, we tried to use CAP_DAC_READ_SEARCH as that provides exactly what we need -
+ * the ability to override the read/execute permissions of directories.  However, it turns out
+ * that shared filesystems (at least, NFS and CephFS) don't understand Linux capabilities, ignore
+ * the setting, and go solely by the FS UID/GID.  Hence, we *must* use the big hammer of setfsuid
+ * instead of the svelte CAP_DAC_READ_SEARCH.
+ */
+class DacOverrideSentry {
+public:
+    DacOverrideSentry(XrdSysError &log) :
+        m_log(log)
+    {
+        //m_log.Emsg("UserSentry", "Switching FS uid for root");
+        m_orig_uid = setfsuid(0);
+        if (m_orig_uid < 0) {
+            //m_log.Emsg("UserSentry", "Failed to switch FS uid for root");
+            return;
+        }
     }
 
-    // Determine which new capabilities are needed to be added to the effective set.
-    cap_get_flag(caps, CAP_SETUID, CAP_EFFECTIVE, &test_flag);
-    if (test_flag == CAP_CLEAR) {
-        //log.Emsg("Initialize", "Will request effective capability for CAP_SETUID");
-        cap_list[caps_to_set] = CAP_SETUID;
-        caps_to_set++;
+    ~DacOverrideSentry()
+    {
+        if ((m_orig_uid != -1) && (-1 == setfsuid(m_orig_uid))) {
+            m_log.Emsg("UserSentry", "Failed to return fsuid to original state", strerror(errno));
+        }
     }
-    cap_get_flag(caps, CAP_SETGID, CAP_EFFECTIVE, &test_flag);
-    if (test_flag == CAP_CLEAR) {
-        //log.Emsg("Initialize", "Will request effective capability for CAP_SETGID");
-        cap_list[caps_to_set] = CAP_SETGID;
-        caps_to_set++;
-    }
-    if (caps_to_set && cap_set_flag(caps, CAP_EFFECTIVE, caps_to_set, cap_list, CAP_SET) == -1) {
-        log.Emsg("Initialize", "Failed to add capabilities to the requested list.");
-        cap_free(caps);
-        return false;
-    }
-    if (caps_to_set && (cap_set_proc(caps) == -1)) {
-        log.Emsg("Initialize", "Failed to acquire necessary capabilities for thread");
-        cap_free(caps);
-        return false;
-    }
-    cap_free(caps);
-    return true;
+
+    bool IsValid() const {return m_orig_uid != -1;}
+
+private:
+    int m_orig_uid{-1};
+    XrdSysError &m_log;
 };
+
 
 class UserSentry {
 public:
@@ -107,6 +92,10 @@ public:
         this->Init(username, log);
     }
 
+    static bool ConfigCaps(XrdSysError &log, XrdOucEnv *envP);
+
+    static bool IsCmsd() {return m_is_cmsd;}
+
     void Init(const std::string username, XrdSysError &log)
     {
         struct passwd pwd, *result = nullptr;
@@ -128,7 +117,11 @@ public:
             break;
         } while (1);
         if (result == nullptr) {
-            m_log.Emsg("UserSentry", "Failed to lookup UID for username", username.c_str(), strerror(retval));
+            if (retval) {  // There's an actual error in the lookup.
+                m_log.Emsg("UserSentry", "Failure when looking up UID for username", username.c_str(), strerror(retval));
+            } else {  // Username doesn't exist.
+                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist:", username.c_str());
+            }
             return;
         }
         if (pwd.pw_uid < g_minimum_uid) {
@@ -140,10 +133,11 @@ public:
             return;
         }
 
-        if (!check_caps(m_log)) {
-            m_log.Emsg("UserSentry", "Unable to get correct capabilities for this thread - filesystem action likely to fail.");
-        }
+        // Note: There used to be a spurious check for the capabilities here.  This was removed because
+        // capabilities are at the process-level and don't need to be set per individual thread.  We can
+        // initialize these once and be done with it!
 
+        // TODO: One log line per FS open seems noisy -- could make this configurable.
         m_log.Emsg("UserSentry", "Switching FS uid for user", username.c_str());
         m_orig_uid = setfsuid(result->pw_uid);
         if (m_orig_uid < 0) {
@@ -162,11 +156,15 @@ public:
         }
     }
 
+    bool IsValid() const {return (m_orig_gid != -1) && (m_orig_uid != -1);}
+
 private:
     // Note I am not using `uid_t` and `gid_t` here in order
     // to have the ability to denote an invalid ID (-1)
     int m_orig_uid{-1};
     int m_orig_gid{-1};
+
+    static bool m_is_cmsd;
 
     XrdSysError &m_log;
 };

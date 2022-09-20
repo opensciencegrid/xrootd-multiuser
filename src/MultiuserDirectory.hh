@@ -24,6 +24,7 @@ public:
         //ErrorSentry err_sentry(error, m_oss->error);
         m_client = env.secEnv();
         UserSentry sentry(m_client, m_log);
+        if (!sentry.IsValid()) {return -EACCES;}
         return m_wrappedDir->Opendir(path, env);
     }
 

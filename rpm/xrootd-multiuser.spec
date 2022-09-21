@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.0.4
+Version: 2.1.0
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -65,6 +65,10 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Wed Sep 21 2022 Derek Weitzel <dweitzel@unl.edu> - 2.1.0-1
+- Support cmsd utilizing multiuser plugin
+- Better error message on failure to get username
+
 * Wed May 04 2022 Carl Edquist <edquist@cs.wisc.edu> - 2.0.4-1
 - Initialize crc32
 - Fix assert in el8 due to vector reserve

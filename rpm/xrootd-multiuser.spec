@@ -50,17 +50,21 @@ make install DESTDIR=$RPM_BUILD_ROOT
 rm -rf $RPM_BUILD_ROOT
 
 %post
+%systemd_post cmsd-privileged@.service
 %systemd_post xrootd-privileged@.service
 
 %preun
+%systemd_preun cmsd-privileged@.service
 %systemd_preun xrootd-privileged@.service
 
 %postun
+%systemd_postun cmsd-privileged@.service
 %systemd_postun xrootd-privileged@.service
 
 %files
 %defattr(-,root,root,-)
 %{_libdir}/libXrdMultiuser-*.so
+%{_unitdir}/cmsd-privileged@.service
 %{_unitdir}/xrootd-privileged@.service
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 

@@ -133,9 +133,8 @@ public:
             return;
         }
 
-        // Note: There used to be a spurious check for the capabilities here.  This was removed because
-        // capabilities are at the process-level and don't need to be set per individual thread.  We can
-        // initialize these once and be done with it!
+        // Note: Capabilities need to be set per thread, so we need to do this
+        ConfigCaps(m_log, nullptr);
 
         // TODO: One log line per FS open seems noisy -- could make this configurable.
         m_log.Emsg("UserSentry", "Switching FS uid for user", username.c_str());

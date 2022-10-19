@@ -75,6 +75,7 @@ public:
         auto got_token = client->eaAPI->Get("request.name", username);
         if (!got_token && (!client->name || !client->name[0])) {
             log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
+            m_is_anonymous = true;
             return;
         }
 
@@ -155,13 +156,14 @@ public:
         }
     }
 
-    bool IsValid() const {return (m_orig_gid != -1) && (m_orig_uid != -1);}
+    bool IsValid() const {return ((m_orig_gid != -1) && (m_orig_uid != -1)) || m_is_anonymous;}
 
 private:
     // Note I am not using `uid_t` and `gid_t` here in order
     // to have the ability to denote an invalid ID (-1)
     int m_orig_uid{-1};
     int m_orig_gid{-1};
+    bool m_is_anonymous{false};
 
     static bool m_is_cmsd;
 

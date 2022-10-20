@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.1.1
+Version: 2.1.2
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -69,6 +69,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Wed Oct 19 2022 Derek Weitzel <dweitzel@unl.edu> - 2.1.2-1
+- Fix user sentry check for anonymous access
+
 * Tue Oct 18 2022 Derek Weitzel <dweitzel@unl.edu> - 2.1.1-1
 - Fix capability handling to per thread
 

@@ -74,8 +74,8 @@ public:
         std::string username;
         auto got_token = client->eaAPI->Get("request.name", username);
         if (!got_token && (!client->name || !client->name[0])) {
-            log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
-            m_is_anonymous = true;
+            // Anonymous client; no user set
+            this->Init("", log);
             return;
         }
 
@@ -107,6 +107,12 @@ public:
         std::vector<char> buf(buflen);
 
         int retval;
+
+        if (username.empty()) {
+            log.Emsg("UserSentry", "Anonymous client; no user set, cannot change FS UIDs");
+            m_is_anonymous = true;
+            return;
+        }
 
         do {
             retval = getpwnam_r(username.c_str(), &pwd, &buf[0], buflen, &result);

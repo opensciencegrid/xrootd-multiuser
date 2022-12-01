@@ -361,6 +361,7 @@ XrdOss *XrdOssGetStorageSystem2(XrdOss       *native_oss,
     XrdSysError log(Logger, "multiuser_");
     if (native_oss->Init(Logger, config_fn, envP) != 0) {
         log.Emsg("Initialize", "Multiuser failed to initialize the native.");
+        return nullptr;
     }
     return XrdOssAddStorageSystem2(native_oss, Logger, config_fn, parms, envP);
 }
@@ -374,6 +375,7 @@ XrdOss *XrdOssGetStorageSystem(XrdOss       *native_oss,
     XrdSysError log(Logger, "multiuser_");
     if (native_oss->Init(Logger, config_fn) != 0) {
         log.Emsg("Initialize", "Multiuser failed to initialize the native.");
+        return nullptr;
     }
     return XrdOssAddStorageSystem2(native_oss, Logger, config_fn, parms, nullptr);
 }

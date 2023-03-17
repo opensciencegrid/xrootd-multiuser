@@ -73,6 +73,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Fri Mar 17 2023 Matyas Selmeci <matyas@cs.wisc.edu> - 2.1.2-2
+- Do an in-source build on el9
+
 * Wed Oct 19 2022 Derek Weitzel <dweitzel@unl.edu> - 2.1.2-1
 - Fix user sentry check for anonymous access
 

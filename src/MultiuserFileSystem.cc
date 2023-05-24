@@ -204,7 +204,31 @@ int       MultiuserFileSystem::Create(const char *tid, const char *path, mode_t 
     auto client = env.secEnv();
     UserSentry sentry(client, m_log);
     if (!sentry.IsValid()) return -EACCES;
-    return m_oss->Create(tid, path, mode, env, opts);
+    auto create_result = m_oss->Create(tid, path, mode, env, opts);
+    if (create_result == -EACCES) {
+        bool sticky_gid;
+        auto sgid_result = DetermineGID(*m_oss, env, m_log, sentry.username(),
+            sentry.pgid(), path, sticky_gid);
+        if (sgid_result >= 0) {
+            GidSentry gsentry(sgid_result, m_log);
+            if (!gsentry.IsValid()) return -EACCES;
+
+            create_result = m_oss->Create(tid, path, mode, env, opts);
+            if (create_result == XrdOssOK && !sticky_gid) {
+                DacOverrideSentry dacsentry(m_log);
+                std::unique_ptr<XrdOssDF> fh(m_oss->newFile(tid));
+                if (fh) {
+                    if (0 == fh->Open(path, O_RDWR, 0, env)) {
+                        auto fd = fh->getFD();
+                        if (fd >= 0) {
+                            fchown(fd, -1, sentry.pgid());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return create_result;
 }
 
 void      MultiuserFileSystem::Disc(XrdOucEnv &env)
@@ -278,7 +302,7 @@ int       MultiuserFileSystem::Mkdir(const char *path, mode_t mode, int mkpath,
             // If we should operate BSD-style, we need to open the directory in
             // order to get a real file descriptor.  This is because the OSS
             // API doesn't have a concept of `chown`.
-            if (mkdir_result == XrdOssOK && sticky_gid) {
+            if (mkdir_result == XrdOssOK && !sticky_gid) {
                 DacOverrideSentry dacsentry(m_log);
                 std::unique_ptr<XrdOssDF> dirObj(m_oss->newDir("internal"));
                 if (dirObj) {
@@ -340,7 +364,19 @@ int       MultiuserFileSystem::Stat(const char *path, struct stat *buff,
         overridePtr.reset(new DacOverrideSentry(m_log));
         if (!overridePtr->IsValid()) return -EACCES;
     }
-    return m_oss->Stat(path, buff, opts, env);
+    auto stat_result = m_oss->Stat(path, buff, opts, env);
+    if (sentryPtr && stat_result == -EACCES) {
+        bool sticky_gid;
+        auto sgid_result = DetermineGID(*m_oss, *env, m_log, sentryPtr->username(),
+            sentryPtr->pgid(), path, sticky_gid);
+        if (sgid_result >= 0) {
+            GidSentry gsentry(sgid_result, m_log);
+            if (!gsentry.IsValid()) return -EACCES;
+
+            stat_result = m_oss->Stat(path, buff, opts, env);
+        }
+    }
+    return stat_result;
 }
 
 int       MultiuserFileSystem::Stats(char *buff, int blen)

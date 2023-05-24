@@ -40,7 +40,7 @@ bool GetParentDir(const std::string file, std::string &parent_output)
         return true;
     }
 
-    parent_output = file.substr(0, off);
+    parent_output = file.substr(0, off + 1);
     return true;
 }
 
@@ -72,7 +72,7 @@ int DetermineGID_impl(XrdOss &oss, XrdOucEnv &env, XrdSysError &log,
     // is a member of.
     std::vector<gid_t> groups;
     groups.resize(16, -1);
-    int actual_ngroups;
+    int actual_ngroups = 16;
     if (getgrouplist(username.c_str(), pgid, &groups[0], &actual_ngroups) == -1) {
         groups.resize(actual_ngroups, -1);
         if (getgrouplist(username.c_str(), pgid, &groups[0], &actual_ngroups) == -1) {

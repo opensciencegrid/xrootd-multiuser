@@ -70,6 +70,12 @@ bool UserSentry::ConfigCaps(XrdSysError &log, XrdOucEnv *envP) {
         cap_free(caps);
         return false;
     }
+    cap_get_flag(caps, CAP_CHOWN, CAP_PERMITTED, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        log.Emsg("check_caps", "CAP_CHOWN not in daemon's permitted set");
+        cap_free(caps);
+        return false;
+    }
 
     // Determine which new capabilities are needed to be added to the effective set.
     cap_get_flag(caps, CAP_SETUID, CAP_EFFECTIVE, &test_flag);
@@ -82,6 +88,12 @@ bool UserSentry::ConfigCaps(XrdSysError &log, XrdOucEnv *envP) {
     if (test_flag == CAP_CLEAR) {
         //log.Emsg("Initialize", "Will request effective capability for CAP_SETGID");
         cap_list[caps_to_set] = CAP_SETGID;
+        caps_to_set++;
+    }
+    cap_get_flag(caps, CAP_CHOWN, CAP_EFFECTIVE, &test_flag);
+    if (test_flag == CAP_CLEAR) {
+        //log.Emsg("Initialize", "Will request effective capability for CAP_CHOWN");
+        cap_list[caps_to_set] = CAP_CHOWN;
         caps_to_set++;
     }
 
@@ -169,7 +181,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
             if (!gsentry.IsValid()) return -EACCES;
 
             open_result = m_wrapped->Open(path, Oflag, Mode, env);
-            if (open_result == XrdOssOK && sticky_gid) {
+            if (open_result == XrdOssOK && !sticky_gid && (Oflag & O_CREAT)) {
                 fd = m_wrapped->getFD();
                 // We call the POSIX `fchown` directly on the underlying fd as root;
                 // this is necessary because the OSS API doesn't have a `fchown` of its own.

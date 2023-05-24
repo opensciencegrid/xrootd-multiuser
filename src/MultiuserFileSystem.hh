@@ -62,6 +62,7 @@ public:
     int       Unlink(const char *path, int Opts=0, XrdOucEnv *env=0);
     int       Lfn2Pfn(const char *Path, char *buff, int blen);
     const char       *Lfn2Pfn(const char *Path, char *buff, int blen, int &rc);
+    XrdOss   *GetWrappedOss() {return m_oss;}
 
 private:
     mode_t m_umask_mode;

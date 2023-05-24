@@ -16,6 +16,7 @@
 #include "MultiuserDirectory.hh"
 #include "UserSentry.hh"
 #include "MultiuserFile.hh"
+#include "GIDHandler.hh"
 
 #include <exception>
 #include <memory>
@@ -262,7 +263,35 @@ int       MultiuserFileSystem::Mkdir(const char *path, mode_t mode, int mkpath,
     {
         mode |= 0777;
     }
-    return m_oss->Mkdir(path, mode, mkpath, env);
+    auto mkdir_result = m_oss->Mkdir(path, mode, mkpath, env);
+    if (mkdir_result == -EACCES && sentryPtr) {
+        bool sticky_gid;
+        auto sgid_result = DetermineGID(*m_oss, *env, m_log, sentryPtr->username(),
+            sentryPtr->pgid(), path, sticky_gid);
+        if (sgid_result >= 0) {
+            // We have a secondary GID that should be used to retry the mkdir.
+            GidSentry gsentry(sgid_result, m_log);
+            if (!gsentry.IsValid()) return -EACCES;
+
+            mkdir_result = m_oss->Mkdir(path, mode, mkpath, env);
+
+            // If we should operate BSD-style, we need to open the directory in
+            // order to get a real file descriptor.  This is because the OSS
+            // API doesn't have a concept of `chown`.
+            if (mkdir_result == XrdOssOK && sticky_gid) {
+                DacOverrideSentry dacsentry(m_log);
+                std::unique_ptr<XrdOssDF> dirObj(m_oss->newDir("internal"));
+                if (dirObj) {
+                    dirObj->Opendir(path, *env);
+                    auto fd = dirObj->getFD();
+                    if (fd >= 0) {
+                        fchown(fd, -1, sentryPtr->pgid());
+                    }
+                }
+            }
+        }
+    }
+    return mkdir_result;
 }
 
 int       MultiuserFileSystem::Reloc(const char *tident, const char *path,

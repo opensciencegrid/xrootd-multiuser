@@ -4,6 +4,7 @@ global:
   XrdOssAddStorageSystem*;
   XrdCksAdd2*;
   XrdCksInit*;
+  XrdSfsGetFileSystem*;
 
 local:
   *;

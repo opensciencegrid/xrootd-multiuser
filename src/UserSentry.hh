@@ -61,6 +61,32 @@ private:
 };
 
 
+class GidSentry {
+public:
+    GidSentry(gid_t gid, XrdSysError &log) :
+        m_log(log)
+    {
+        m_orig_gid = setfsgid(gid);
+        if (m_orig_gid < 0) {
+            return;
+        }
+    }
+
+    ~GidSentry()
+    {
+        if ((m_orig_gid != -1) && (-1 == setfsgid(m_orig_gid))) {
+            m_log.Emsg("GidSentry", "Failed to return fsgid to original state", strerror(errno));
+        }
+    }
+
+    bool IsValid() const {return m_orig_gid != -1;}
+
+private:
+    int m_orig_gid{-1};
+    XrdSysError &m_log;
+};
+
+
 class UserSentry {
 public:
     UserSentry(const XrdSecEntity *client, XrdSysError &log) :
@@ -145,6 +171,9 @@ public:
             return;
         }
         m_orig_gid = setfsgid(result->pw_gid);
+
+        m_username = username;
+        m_gid = result->pw_gid;
     }
 
     ~UserSentry() {
@@ -158,15 +187,20 @@ public:
 
     bool IsValid() const {return ((m_orig_gid != -1) && (m_orig_uid != -1)) || m_is_anonymous;}
 
+    int pgid() {return m_gid;}
+    std::string &username() {return m_username;}
+
 private:
     // Note I am not using `uid_t` and `gid_t` here in order
     // to have the ability to denote an invalid ID (-1)
     int m_orig_uid{-1};
     int m_orig_gid{-1};
+    int m_gid{-1};
     bool m_is_anonymous{false};
 
     static bool m_is_cmsd;
 
+    std::string m_username;
     XrdSysError &m_log;
 };
 

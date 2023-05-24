@@ -39,7 +39,7 @@ add_definitions(-D_POSIX_C_SOURCE=200809L)
 
 include_directories(${XROOTD_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
 
-add_library(XrdMultiuser SHARED src/multiuser.cpp src/MultiuserFileSystem.cc src/XrdChecksum.cc src/XrdChecksumCalc.cc)
+add_library(XrdMultiuser SHARED src/multiuser.cpp src/MultiuserFileSystem.cc src/XrdChecksum.cc src/XrdChecksumCalc.cc src/GIDHandler.cc)
 target_link_libraries(XrdMultiuser -ldl ${CAP_LIB} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB} ${LIBCRYPTO_LIBRARIES} ${ZLIB_LIBRARIES})
 set_target_properties(XrdMultiuser PROPERTIES OUTPUT_NAME "XrdMultiuser-${XROOTD_PLUGIN_VERSION}" SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 

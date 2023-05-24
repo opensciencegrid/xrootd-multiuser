@@ -13,6 +13,7 @@
 #include "MultiuserFileSystem.hh"
 #include "MultiuserFile.hh"
 #include "UserSentry.hh"
+#include "GIDHandler.hh"
 
 #include <exception>
 #include <memory>
@@ -157,6 +158,28 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
     if (!sentry.IsValid()) return -EACCES;
 
     auto open_result = m_wrapped->Open(path, Oflag, Mode, env);
+    if (open_result == -EACCES) {
+        // If the file-open failed, then we go looking for secondary GIDs that might
+        // provide us with access.
+        bool sticky_gid;
+        auto sgid_result = DetermineGID(*m_oss->GetWrappedOss(), env, m_log, sentry.username(),
+            sentry.pgid(), path, sticky_gid);
+        if (sgid_result >= 0) {
+            GidSentry gsentry(sgid_result, m_log);
+            if (!gsentry.IsValid()) return -EACCES;
+
+            open_result = m_wrapped->Open(path, Oflag, Mode, env);
+            if (open_result == XrdOssOK && sticky_gid) {
+                fd = m_wrapped->getFD();
+                // We call the POSIX `fchown` directly on the underlying fd as root;
+                // this is necessary because the OSS API doesn't have a `fchown` of its own.
+                if (fd >= 0) {
+                    DacOverrideSentry dacsentry(m_log);
+                    fchown(fd, -1, sentry.pgid());
+                }
+            }
+        }
+    }
 
     if ((Oflag & (O_WRONLY | O_RDWR)) && m_checksum_on_write)
     {

@@ -79,6 +79,15 @@ public:
             return;
         }
 
+        // Check if grid-mapfile was used to generate the name
+        std::string gridmap_name;
+        auto gridmap_success = client->eaAPI->Get("gridmap.name", gridmap_name);
+        if (gridmap_success && gridmap_name == "1") {
+            m_is_gridmap_name = true;
+        } else {
+            m_is_gridmap_name = false;
+        }
+
         // If we fail to get the username from the scitokens, then get it from
         // the depreciated way, client->name
         if (!got_token) {
@@ -120,9 +129,11 @@ public:
         if (result == nullptr) {
             if (retval) {  // There's an actual error in the lookup.
                 m_log.Emsg("UserSentry", "Failure when looking up UID for username", username.c_str(), strerror(retval));
-            } else {  // Username doesn't exist.
-                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist (continuing as anonymous):", username.c_str());
+            } else if (!m_is_gridmap_name) {  // Username doesn't exist, and grid mapfile was not used to generate the name
+                m_log.Emsg("UserSentry", "XRootD username does not exist (continuing as anonymous):", username.c_str());
                 m_is_anonymous = true;
+            } else {  // Username doesn't exist, but grid mapfile was used to generate the name. Denying.
+                m_log.Emsg("UserSentry", "XRootD mapfile generated username does not exist (denying):", username.c_str());
             }
             return;
         }
@@ -165,6 +176,7 @@ private:
     int m_orig_uid{-1};
     int m_orig_gid{-1};
     bool m_is_anonymous{false};
+    bool m_is_gridmap_name{true};
 
     static bool m_is_cmsd;
 

@@ -121,7 +121,8 @@ public:
             if (retval) {  // There's an actual error in the lookup.
                 m_log.Emsg("UserSentry", "Failure when looking up UID for username", username.c_str(), strerror(retval));
             } else {  // Username doesn't exist.
-                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist:", username.c_str());
+                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist (continuing as anonymous):", username.c_str());
+                m_is_anonymous = true;
             }
             return;
         }

@@ -79,13 +79,13 @@ public:
             return;
         }
 
-        // Check if grid-mapfile was used to generate the name
-        std::string gridmap_name;
-        auto gridmap_success = client->eaAPI->Get("gridmap.name", gridmap_name);
-        if (gridmap_success && gridmap_name == "1") {
-            m_is_gridmap_name = true;
-        } else {
-            m_is_gridmap_name = false;
+        // If we used GSI, but user was not mapped by VOMS or gridmap, consider the client anonymous
+        if (strcmp("gsi", client->prot) == 0) {
+            if (!IsGsiUserMapped(client)) {
+                log.Emsg("UserSentry", "Anonymous GSI client; cannot change FS UIDs");
+                m_is_anonymous = true;
+                return;
+            }
         }
 
         // If we fail to get the username from the scitokens, then get it from
@@ -105,6 +105,19 @@ public:
     static bool ConfigCaps(XrdSysError &log, XrdOucEnv *envP);
 
     static bool IsCmsd() {return m_is_cmsd;}
+
+    static bool IsGsiUserMapped(const XrdSecEntity *client) {
+        // If VOMS was used to map client, return true
+        if (client->vorg) { return true; }
+
+        // If gridmap was used, return true
+        std::string gridmap_name;
+        auto gridmap_success = client->eaAPI->Get("gridmap.name", gridmap_name);
+        if (gridmap_success && gridmap_name == "1") { return true; }
+
+        // User is a DN or DN hash, return false
+        return false;
+    }
 
     void Init(const std::string username, XrdSysError &log)
     {
@@ -129,11 +142,8 @@ public:
         if (result == nullptr) {
             if (retval) {  // There's an actual error in the lookup.
                 m_log.Emsg("UserSentry", "Failure when looking up UID for username", username.c_str(), strerror(retval));
-            } else if (!m_is_gridmap_name) {  // Username doesn't exist, and grid mapfile was not used to generate the name
-                m_log.Emsg("UserSentry", "XRootD username does not exist (continuing as anonymous):", username.c_str());
-                m_is_anonymous = true;
-            } else {  // Username doesn't exist, but grid mapfile was used to generate the name. Denying.
-                m_log.Emsg("UserSentry", "XRootD mapfile generated username does not exist (denying):", username.c_str());
+            } else {  // Username doesn't exist.
+                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist:", username.c_str());
             }
             return;
         }
@@ -176,7 +186,6 @@ private:
     int m_orig_uid{-1};
     int m_orig_gid{-1};
     bool m_is_anonymous{false};
-    bool m_is_gridmap_name{true};
 
     static bool m_is_cmsd;
 

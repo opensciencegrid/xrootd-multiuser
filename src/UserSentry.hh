@@ -79,6 +79,15 @@ public:
             return;
         }
 
+        // If we used GSI, but user was not mapped by VOMS or gridmap, consider the client anonymous
+        if (strcmp("gsi", client->prot) == 0) {
+            if (!IsGsiUserMapped(client)) {
+                log.Emsg("UserSentry", "Anonymous GSI client; cannot change FS UIDs");
+                m_is_anonymous = true;
+                return;
+            }
+        }
+
         // If we fail to get the username from the scitokens, then get it from
         // the depreciated way, client->name
         if (!got_token) {
@@ -96,6 +105,19 @@ public:
     static bool ConfigCaps(XrdSysError &log, XrdOucEnv *envP);
 
     static bool IsCmsd() {return m_is_cmsd;}
+
+    static bool IsGsiUserMapped(const XrdSecEntity *client) {
+        // If VOMS was used to map client, return true
+        if (client->vorg) { return true; }
+
+        // If gridmap was used, return true
+        std::string gridmap_name;
+        auto gridmap_success = client->eaAPI->Get("gridmap.name", gridmap_name);
+        if (gridmap_success && gridmap_name == "1") { return true; }
+
+        // User is a DN or DN hash, return false
+        return false;
+    }
 
     void Init(const std::string username, XrdSysError &log)
     {

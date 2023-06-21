@@ -14,11 +14,13 @@
 
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <pwd.h>
 #include <sys/capability.h>
 #include <sys/fsuid.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 // TODO: set this via library parameters.
@@ -119,6 +121,13 @@ public:
         return false;
     }
 
+    // Use syscall to set supplementary groups instead of through glibc so
+    // changes are applied to individual threads only. See nptl(7).
+    static int ThreadSetgroups(size_t size, const gid_t *list)
+    {
+        return syscall(SYS_setgroups, size, list);
+    }
+
     void Init(const std::string username, XrdSysError &log)
     {
         struct passwd pwd, *result = nullptr;
@@ -156,6 +165,24 @@ public:
             return;
         }
 
+        // Get supplementary groups for user
+        int ngroups = 16;
+        std::vector<gid_t> groups(ngroups);
+        do {
+            int old_ngroups = ngroups;
+            retval = getgrouplist(username.c_str(), pwd.pw_gid, groups.data(), &ngroups);
+            if (-1 == retval && ngroups > old_ngroups) {
+                // Too many groups. Resize buffer and try again.
+                groups.resize(ngroups);
+                continue;
+            }
+            break;
+        } while (1);
+        if (-1 == retval) {
+            m_log.Emsg("UserSentry", "Failure when looking up supplementary groups for username", username.c_str());
+            return;
+        }
+
         // Note: Capabilities need to be set per thread, so we need to do this
         ConfigCaps(m_log, nullptr);
 
@@ -167,6 +194,7 @@ public:
             return;
         }
         m_orig_gid = setfsgid(result->pw_gid);
+        ThreadSetgroups(ngroups, groups.data());
     }
 
     ~UserSentry() {
@@ -175,6 +203,12 @@ public:
         }
         if ((m_orig_gid != -1) && (-1 == setfsgid(m_orig_gid))) {
             m_log.Emsg("UserSentry", "Failed to return fsgid to original state", strerror(errno));
+        }
+        // Clear supplementary groups
+        // We don't need to restore the daemon's original groups, as the
+        // *-privileged processes run without supplementary groups defined.
+        if ((0 != ThreadSetgroups(0, nullptr))) {
+            m_log.Emsg("UserSentry", "Failed to clear supplementary groups", strerror(errno));
         }
     }
 

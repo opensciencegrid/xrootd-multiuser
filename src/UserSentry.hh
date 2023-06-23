@@ -207,9 +207,7 @@ public:
         // Clear supplementary groups
         // We don't need to restore the daemon's original groups, as the
         // *-privileged processes run without supplementary groups defined.
-        if ((0 != ThreadSetgroups(0, nullptr))) {
-            m_log.Emsg("UserSentry", "Failed to clear supplementary groups", strerror(errno));
-        }
+        ThreadSetgroups(0, nullptr);
     }
 
     bool IsValid() const {return ((m_orig_gid != -1) && (m_orig_uid != -1)) || m_is_anonymous;}

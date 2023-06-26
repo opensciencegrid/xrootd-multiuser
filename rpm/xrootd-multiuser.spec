@@ -1,7 +1,7 @@
 
 Name: xrootd-multiuser
-Version: 2.1.2
-Release: 2%{?dist}
+Version: 2.1.3
+Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
 Group: System Environment/Daemons
@@ -73,6 +73,11 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Mon Jun 26 2023 Mátyás Selmeci <matyas@cs.wisc.edu> - 2.1.3-1
+- Fail plugin initialization if we can't get the OSS (SOFTWARE-5388)
+- If user cannot be mapped to uid, continue as anonymous
+- Change from named daemon to exec
+
 * Fri Mar 17 2023 Matyas Selmeci <matyas@cs.wisc.edu> - 2.1.2-2
 - Do an in-source build on el9
 

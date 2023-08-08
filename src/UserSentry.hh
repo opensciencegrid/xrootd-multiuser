@@ -79,8 +79,10 @@ public:
             return;
         }
 
-        // If we used GSI, but user was not mapped by VOMS or gridmap, consider the client anonymous
-        if (strcmp("gsi", client->prot) == 0) {
+        // If we used GSI, and we didn't get a token (in ?authz=Bearer%20...),
+        // and user was not mapped by VOMS or gridmap,
+        // consider the client anonymous
+        if (strcmp("gsi", client->prot) == 0 && !got_token) {
             if (!IsGsiUserMapped(client)) {
                 log.Emsg("UserSentry", "Anonymous GSI client; cannot change FS UIDs");
                 m_is_anonymous = true;

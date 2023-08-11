@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.1.3
+Version: 2.1.4
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -73,6 +73,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Fri Aug 11 2023 Matt Westphall <westphall@wisc.edu> - 2.1.4-1
+- Add support for extended listings (SOFTWARE-5647)
+
 * Mon Jun 26 2023 Mátyás Selmeci <matyas@cs.wisc.edu> - 2.1.3-1
 - Fail plugin initialization if we can't get the OSS (SOFTWARE-5388)
 - If user cannot be mapped to uid, continue as anonymous

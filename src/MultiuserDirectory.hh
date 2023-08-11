@@ -30,6 +30,8 @@ public:
 
     int Readdir(char *buff, int blen) 
     {
+        UserSentry sentry(m_client, m_log);
+        if (!sentry.IsValid()) {return -EACCES;}
         return m_wrappedDir->Readdir(buff, blen);
     }
 

@@ -8,6 +8,7 @@ After=network-online.target
 [Service]
 # Note "-R xrootd" here instructs xrootd to drop privileges to the xrootd Unix user.
 ExecStart=/usr/bin/xrootd -l /var/log/xrootd/xrootd.log -c /etc/xrootd/xrootd-%i.cfg -k fifo -s /var/run/xrootd/xrootd-%i.pid -n %i -R xrootd
+Environment=XC_ENABLE_MULTIUSER=1
 Type=simple
 Restart=on-abort
 RestartSec=0

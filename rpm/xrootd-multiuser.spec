@@ -1,6 +1,6 @@
 
 Name: xrootd-multiuser
-Version: 2.1.4
+Version: 2.2.0
 Release: 1%{?dist}
 Summary: Multiuser filesystem writing plugin for xrootd
 
@@ -73,6 +73,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_sysconfdir}/xrootd/config.d/60-osg-multiuser.cfg
 
 %changelog
+* Thu Dec 07 2023 Matt Westphall <westphall@wisc.edu> - 2.2.0-1
+- Add flag for enabling multiuser configuration (SOFTWARE-5481)
+
 * Fri Aug 11 2023 Matt Westphall <westphall@wisc.edu> - 2.1.4-1
 - Add support for extended listings (SOFTWARE-5647)
 

@@ -152,18 +152,18 @@ public:
         } while (1);
         if (result == nullptr) {
             if (retval) {  // There's an actual error in the lookup.
-                m_log.Emsg("UserSentry", "Failure when looking up UID for username", username.c_str(), strerror(retval));
+                m_log.Emsg("UserSentry", "Multiuser denying access: Failure when looking up UID for username", username.c_str(), strerror(retval));
             } else {  // Username doesn't exist.
-                m_log.Emsg("UserSentry", "XRootD mapped request to username that does not exist:", username.c_str());
+                m_log.Emsg("UserSentry", "Multiuser denying access: XRootD mapped request to username that does not exist:", username.c_str());
             }
             return;
         }
         if (pwd.pw_uid < g_minimum_uid) {
-            m_log.Emsg("UserSentry", "Username", username.c_str(), "maps to a system UID; rejecting lookup");
+            m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system UID; rejecting lookup");
             return;
         }
         if (pwd.pw_gid < g_minimum_gid) {
-            m_log.Emsg("UserSentry", "Username", username.c_str(), "maps to a system GID; rejecting lookup");
+            m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system GID; rejecting lookup");
             return;
         }
 
@@ -181,7 +181,7 @@ public:
             break;
         } while (1);
         if (-1 == retval) {
-            m_log.Emsg("UserSentry", "Failure when looking up supplementary groups for username", username.c_str());
+            m_log.Emsg("UserSentry", "Multiuser denying access: Failure when looking up supplementary groups for username", username.c_str());
             return;
         }
 
@@ -192,7 +192,7 @@ public:
         m_log.Emsg("UserSentry", "Switching FS uid for user", username.c_str());
         m_orig_uid = setfsuid(result->pw_uid);
         if (m_orig_uid < 0) {
-            m_log.Emsg("UserSentry", "Failed to switch FS uid for user", username.c_str());
+            m_log.Emsg("UserSentry", "Multiuser denying access: Failed to switch FS uid for user", username.c_str());
             return;
         }
         m_orig_gid = setfsgid(result->pw_gid);

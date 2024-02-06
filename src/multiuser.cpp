@@ -246,7 +246,8 @@ public:
                 if (username) {
                     return new UserSentry(username, *m_log);
                 } else {
-                    return nullptr;
+                    // Anonymous requests will not have a request.name
+                    return new UserSentry("", *m_log);
                 }
             }
         }

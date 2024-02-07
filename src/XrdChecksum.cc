@@ -63,7 +63,9 @@ int        ChecksumManager::Calc( const char *lfn, XrdCksData &Cks, int doSet)
     int return_digest = 0;
     if (doSet)
     {
-        digests = ChecksumManager::ALL;
+        // doSet indicates that the new checksum value must replace any existing xattrs.
+        // Calculate the enabled checksums (not necessarily all known to the plugin).
+        digests = g_multisuer_oss.m_digests;
     }
     if (!strncasecmp(Cks.Name, "md5", Cks.NameSize))
     {

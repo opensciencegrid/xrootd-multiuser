@@ -22,7 +22,7 @@ ofs.osslib ++ libXrdMultiuser.so
 To enable the checksum (only on XRootD 5.2+):
 
 ```
-ofs.ckslib ++ libXrdMultiuser.so
+ofs.ckslib * libXrdMultiuser.so
 ```
 
 Startup

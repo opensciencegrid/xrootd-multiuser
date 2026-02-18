@@ -24,6 +24,8 @@ public:
     bool
     Config(XrdSysLogger *lp, const char *configfn);
 
+    size_t GetWriteBufferSize() const { return m_write_buffer_size; }
+
     XrdOssDF *newDir(const char *user=0);
     XrdOssDF *newFile(const char *user=0);
     int Chmod(const char * path, mode_t mode, XrdOucEnv *env=0);
@@ -71,6 +73,7 @@ private:
     std::shared_ptr<XrdAccAuthorize> m_authz;
     bool m_checksum_on_write;
     unsigned m_digests;
+    size_t m_write_buffer_size;
 
 };
 

@@ -133,7 +133,7 @@ private:
 };
 
 
-MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss) :
+MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss, size_t write_buffer_size) :
     XrdOssDF(user),
     m_wrapped(std::move(ossDF)),
     m_log(log),
@@ -142,7 +142,10 @@ MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, 
     m_nextoff(0),
     m_oss(oss),
     m_checksum_on_write(checksum_on_write),
-    m_digests(digests)
+    m_digests(digests),
+    m_write_buffer_size(write_buffer_size),
+    m_buffer_offset(-1),
+    m_buffering_enabled(write_buffer_size > 0)
 {}
 
 int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env)
@@ -173,28 +176,116 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
+    std::lock_guard<std::mutex> lock(m_buffer_mutex);
 
-    if ((offset != m_nextoff) && m_state) 
+    // Check for out-of-order writes if checksumming or buffering
+    if ((offset != m_nextoff) && (m_state || m_buffering_enabled)) 
     {   
-        std::stringstream ss;
-        ss << "Out-of-order writes not supported while running checksum. " << m_fname;
-        m_log.Emsg("Write", ss.str().c_str());
-        return -ENOTSUP;
+        // Flush any buffered data first
+        if (m_buffering_enabled) {
+            int flush_result = FlushWriteBuffer();
+            if (flush_result < 0) {
+                return flush_result;
+            }
+            // Disable buffering for the rest of this file
+            m_buffering_enabled = false;
+        }
+
+        if (m_state) {
+            std::stringstream ss;
+            ss << "Out-of-order writes not supported while running checksum. " << m_fname;
+            m_log.Emsg("Write", ss.str().c_str());
+            return -ENOTSUP;
+        }
     }
 
+    // If buffering is enabled and configured
+    if (m_buffering_enabled) {
+        // If this is the first write or buffer is empty, initialize buffer offset
+        if (m_write_buffer.empty()) {
+            m_buffer_offset = offset;
+        }
+
+        // Check if this write is sequential to the buffer
+        off_t expected_offset = m_buffer_offset + static_cast<off_t>(m_write_buffer.size());
+        if (offset != expected_offset) {
+            // Not sequential - flush buffer and disable buffering
+            int flush_result = FlushWriteBuffer();
+            if (flush_result < 0) {
+                return flush_result;
+            }
+            m_buffering_enabled = false;
+            // Fall through to direct write
+        } else {
+            // Sequential write - check if we should buffer it
+            size_t total_size = m_write_buffer.size() + size;
+            
+            if (total_size <= m_write_buffer_size) {
+                // Buffer this write
+                m_write_buffer.insert(m_write_buffer.end(), 
+                                     static_cast<const unsigned char*>(buffer), 
+                                     static_cast<const unsigned char*>(buffer) + size);
+                m_nextoff = offset + size;
+                return size;
+            } else {
+                // Buffer would exceed limit - flush and write directly
+                int flush_result = FlushWriteBuffer();
+                if (flush_result < 0) {
+                    return flush_result;
+                }
+                // Fall through to direct write
+            }
+        }
+    }
+
+    // Direct write (no buffering or buffer disabled)
     auto result = m_wrapped->Write(buffer, offset, size);
-    if (result >= 0) {m_nextoff += result;}
-    if (m_state)
-    {
-        m_state->Update(static_cast<const unsigned char*>(buffer), size);
+    if (result >= 0) {
+        m_nextoff = offset + result;
+        if (m_state) {
+            m_state->Update(static_cast<const unsigned char*>(buffer), size);
+        }
     }
     return result;
 }
 
 
 
+int MultiuserFile::FlushWriteBuffer()
+{
+    if (m_write_buffer.empty()) {
+        return 0;
+    }
+
+    auto result = m_wrapped->Write(m_write_buffer.data(), m_buffer_offset, m_write_buffer.size());
+    if (result < 0) {
+        return result;
+    }
+
+    if (m_state) {
+        m_state->Update(m_write_buffer.data(), m_write_buffer.size());
+    }
+
+    m_write_buffer.clear();
+    m_buffer_offset = -1;
+
+    return 0;
+}
+
+
 int MultiuserFile::Close(long long *retsz) 
 {
+    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+
+    // Flush any remaining buffered data
+    if (!m_write_buffer.empty()) {
+        int flush_result = FlushWriteBuffer();
+        if (flush_result < 0) {
+            m_log.Emsg("Close", "Failed to flush write buffer");
+            // Continue with close anyway
+        }
+    }
+
     auto close_result = m_wrapped->Close(retsz);
     if (m_state)
     {

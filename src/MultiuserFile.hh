@@ -15,10 +15,12 @@
 #include "XrdChecksum.hh"
 
 #include <memory>
+#include <mutex>
+#include <vector>
 
 class MultiuserFile : public XrdOssDF {
 public:
-    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss);
+    MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss, size_t write_buffer_size);
 
     virtual ~MultiuserFile() {
             if (m_state) {delete m_state;}
@@ -127,6 +129,7 @@ public:
     int Close(long long *retsz=0);
 
 private:
+    int FlushWriteBuffer();
     std::unique_ptr<XrdOssDF> m_wrapped;
     XrdSysError &m_log;
     const XrdSecEntity* m_client;
@@ -137,6 +140,13 @@ private:
     MultiuserFileSystem *m_oss;
     bool m_checksum_on_write;
     unsigned m_digests;
+
+    // Write buffering
+    size_t m_write_buffer_size;
+    std::vector<unsigned char> m_write_buffer;
+    off_t m_buffer_offset;
+    bool m_buffering_enabled;
+    std::mutex m_buffer_mutex;
 
 };
 

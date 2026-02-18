@@ -133,7 +133,7 @@ private:
 };
 
 
-MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss) :
+MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, XrdSysError &log, mode_t umask_mode, bool checksum_on_write, unsigned digests, MultiuserFileSystem *oss, size_t write_buffer_size) :
     XrdOssDF(user),
     m_wrapped(std::move(ossDF)),
     m_log(log),
@@ -142,7 +142,10 @@ MultiuserFile::MultiuserFile(const char *user, std::unique_ptr<XrdOssDF> ossDF, 
     m_nextoff(0),
     m_oss(oss),
     m_checksum_on_write(checksum_on_write),
-    m_digests(digests)
+    m_digests(digests),
+    m_write_buffer_size(write_buffer_size),
+    m_buffer_offset(-1),
+    m_buffering_enabled(write_buffer_size > 0)
 {}
 
 int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv &env)
@@ -173,28 +176,182 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
-
-    if ((offset != m_nextoff) && m_state) 
-    {   
-        std::stringstream ss;
-        ss << "Out-of-order writes not supported while running checksum. " << m_fname;
-        m_log.Emsg("Write", ss.str().c_str());
-        return -ENOTSUP;
+    // Only take the lock if buffering is configured (m_write_buffer_size > 0)
+    std::unique_lock<std::mutex> lock(m_buffer_mutex, std::defer_lock);
+    if (m_write_buffer_size > 0) {
+        lock.lock();
     }
 
+    // Check for out-of-order writes if checksumming or buffering
+    if ((offset != m_nextoff) && (m_state || m_buffering_enabled)) 
+    {   
+        // Flush any buffered data first
+        if (m_buffering_enabled) {
+            int flush_result = FlushWriteBuffer();
+            if (flush_result < 0) {
+                return flush_result;
+            }
+            // Disable buffering for the rest of this file
+            m_buffering_enabled = false;
+        }
+
+        if (m_state) {
+            std::stringstream ss;
+            ss << "Non-sequential write detected; disabling checksum calculation for " << m_fname;
+            m_log.Emsg("Write", ss.str().c_str());
+            delete m_state;
+            m_state = nullptr;
+        }
+    }
+
+    // If buffering is enabled and configured
+    if (m_buffering_enabled) {
+        // If this is the first write or buffer is empty, initialize buffer offset
+        if (m_write_buffer.empty()) {
+            m_buffer_offset = offset;
+        }
+
+        // Check if this write is sequential to the buffer
+        off_t expected_offset = m_buffer_offset + static_cast<off_t>(m_write_buffer.size());
+        if (offset != expected_offset) {
+            // Not sequential - flush buffer and disable buffering
+            int flush_result = FlushWriteBuffer();
+            if (flush_result < 0) {
+                return flush_result;
+            }
+            m_buffering_enabled = false;
+            // Fall through to direct write
+        } else {
+            // Sequential write - check if we should buffer it
+            size_t total_size = m_write_buffer.size() + size;
+            
+            if (total_size <= m_write_buffer_size) {
+                // Buffer this write - reserve capacity to avoid reallocations
+                if (m_write_buffer.capacity() < total_size) {
+                    m_write_buffer.reserve(total_size);
+                }
+                m_write_buffer.insert(m_write_buffer.end(), 
+                                     static_cast<const unsigned char*>(buffer), 
+                                     static_cast<const unsigned char*>(buffer) + size);
+                m_nextoff = offset + size;
+                return size;
+            } else {
+                // Buffer would exceed limit - fill buffer to maximum, flush, then continue
+                size_t space_in_buffer = m_write_buffer_size - m_write_buffer.size();
+                if (space_in_buffer > 0) {
+                    // Fill the buffer completely
+                    if (m_write_buffer.capacity() < m_write_buffer_size) {
+                        m_write_buffer.reserve(m_write_buffer_size);
+                    }
+                    m_write_buffer.insert(m_write_buffer.end(),
+                                         static_cast<const unsigned char*>(buffer),
+                                         static_cast<const unsigned char*>(buffer) + space_in_buffer);
+                }
+                
+                // Flush the full buffer
+                int flush_result = FlushWriteBuffer();
+                if (flush_result < 0) {
+                    return flush_result;
+                }
+                
+                // Now handle the remaining data
+                const unsigned char* remaining_data = static_cast<const unsigned char*>(buffer) + space_in_buffer;
+                size_t remaining_size = size - space_in_buffer;
+                
+                // If remaining data fits in buffer, buffer it; otherwise write directly
+                if (remaining_size <= m_write_buffer_size) {
+                    m_buffer_offset = offset + space_in_buffer;
+                    if (m_write_buffer.capacity() < m_write_buffer_size) {
+                        m_write_buffer.reserve(m_write_buffer_size);
+                    }
+                    m_write_buffer.insert(m_write_buffer.end(),
+                                         remaining_data,
+                                         remaining_data + remaining_size);
+                    m_nextoff = offset + size;
+                    return size;
+                } else {
+                    // Remaining data is too large for buffer - fall through to direct write
+                    buffer = remaining_data;
+                    offset = offset + space_in_buffer;
+                    size = remaining_size;
+                }
+            }
+        }
+    }
+
+    // Direct write (no buffering or buffer disabled)
     auto result = m_wrapped->Write(buffer, offset, size);
-    if (result >= 0) {m_nextoff += result;}
-    if (m_state)
-    {
-        m_state->Update(static_cast<const unsigned char*>(buffer), size);
+    if (result >= 0) {
+        m_nextoff = offset + result;
+        if (m_state && result > 0) {
+            // Only update checksum for the data that was actually written
+            m_state->Update(static_cast<const unsigned char*>(buffer), result);
+        }
     }
     return result;
 }
 
 
 
+// FlushWriteBuffer: Writes all buffered data to the underlying file system.
+// Preconditions: Must be called with m_buffer_mutex held.
+// Returns: 0 on success, negative error code on failure.
+// Side effects:
+//   - Writes buffer contents via m_wrapped->Write()
+//   - Updates checksum state if enabled (m_state)
+//   - Clears m_write_buffer and resets m_buffer_offset on success
+//   - Handles partial writes with retry loop
+//   - On failure, buffer is NOT cleared to allow retry
+int MultiuserFile::FlushWriteBuffer()
+{
+    if (m_write_buffer.empty()) {
+        return 0;
+    }
+
+    size_t total_written = 0;
+    while (total_written < m_write_buffer.size()) {
+        auto result = m_wrapped->Write(m_write_buffer.data() + total_written, 
+                                       m_buffer_offset + total_written, 
+                                       m_write_buffer.size() - total_written);
+        if (result < 0) {
+            // Write failed - don't clear buffer, return error
+            return result;
+        }
+        if (result == 0) {
+            // No progress - treat as error
+            return -EIO;
+        }
+        total_written += result;
+    }
+
+    if (m_state) {
+        m_state->Update(m_write_buffer.data(), m_write_buffer.size());
+    }
+
+    m_write_buffer.clear();
+    m_buffer_offset = -1;
+
+    return 0;
+}
+
+
 int MultiuserFile::Close(long long *retsz) 
 {
+    // Only take the lock if buffering is configured (m_write_buffer_size > 0)
+    std::unique_lock<std::mutex> lock(m_buffer_mutex, std::defer_lock);
+    if (m_write_buffer_size > 0) {
+        lock.lock();
+    }
+
+    // Flush any remaining buffered data
+    if (!m_write_buffer.empty()) {
+        int flush_result = FlushWriteBuffer();
+        if (flush_result < 0) {
+            m_log.Emsg("Close", "Failed to flush write buffer");
+            // Continue with close anyway
+        }
+    }
+
     auto close_result = m_wrapped->Close(retsz);
     if (m_state)
     {
@@ -210,7 +367,7 @@ int MultiuserFile::Close(long long *retsz)
             
         }
         delete m_state;
-        m_state = NULL;
+        m_state = nullptr;
     }
 
     return close_result;

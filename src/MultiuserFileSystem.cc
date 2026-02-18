@@ -41,7 +41,8 @@ MultiuserFileSystem::MultiuserFileSystem(XrdOss *oss, XrdSysLogger *lp, const ch
     m_env(envP),
     m_log(lp, "multiuser_"),
     m_checksum_on_write(false),
-    m_digests(0)
+    m_digests(0),
+    m_write_buffer_size(0)
 {
     if (!oss) {
         throw std::runtime_error("The multi-user plugin must be chained with another filesystem.");
@@ -114,6 +115,28 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
                 return false;
             }
         }
+
+        // Write buffer size
+        if (!strcmp("multiuser.writebuffersize", val)) {
+            val = Config.GetWord();
+            if (!val || !val[0]) {
+                m_log.Emsg("Config", "multiuser.writebuffersize must specify a value");
+                Config.Close();
+                return false;
+            }
+            char *endptr = NULL;
+            errno = 0;
+            long int buffer_size = strtol(val, &endptr, 0);
+            if (errno == ERANGE || buffer_size < 0 || endptr == val || *endptr != '\0') {
+                m_log.Emsg("Config", "multiuser.writebuffersize must specify a valid non-negative integer");
+                Config.Close();
+                return false;
+            }
+            m_write_buffer_size = static_cast<size_t>(buffer_size);
+            std::stringstream ss;
+            ss << "Setting write buffer size to " << m_write_buffer_size << " bytes";
+            m_log.Emsg("Config", ss.str().c_str());
+        }
         if (!strcmp("xrootd.chksum", val)) {
             m_digests = 0;
             val = Config.GetWord();
@@ -175,7 +198,7 @@ XrdOssDF *MultiuserFileSystem::newFile(const char *user)
 {
     // Call the underlying OSS newFile
     std::unique_ptr<XrdOssDF> wrapped(m_oss->newFile(user));
-    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, m_checksum_on_write, m_digests, this);
+    return (MultiuserFile *)new MultiuserFile(user, std::move(wrapped), m_log, m_umask_mode, m_checksum_on_write, m_digests, this, m_write_buffer_size);
 }
 
 int MultiuserFileSystem::Chmod(const char * path, mode_t mode, XrdOucEnv *env)

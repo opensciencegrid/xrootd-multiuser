@@ -127,7 +127,7 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
             char *endptr = NULL;
             errno = 0;
             long int buffer_size = strtol(val, &endptr, 0);
-            if (errno || buffer_size < 0) {
+            if (errno || buffer_size < 0 || endptr == val || *endptr != '\0') {
                 m_log.Emsg("Config", "multiuser.writebuffersize must specify a valid non-negative integer");
                 Config.Close();
                 return false;

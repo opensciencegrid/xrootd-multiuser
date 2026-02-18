@@ -176,6 +176,9 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
+    // Lock protects buffer state and sequential write tracking.
+    // While this serializes writes to the same file, it ensures correctness
+    // and is consistent with the sequential write assumption.
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
 
     // Check for out-of-order writes if checksumming or buffering
@@ -242,8 +245,9 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
     auto result = m_wrapped->Write(buffer, offset, size);
     if (result >= 0) {
         m_nextoff = offset + result;
-        if (m_state) {
-            m_state->Update(static_cast<const unsigned char*>(buffer), size);
+        if (m_state && result > 0) {
+            // Only update checksum for the data that was actually written
+            m_state->Update(static_cast<const unsigned char*>(buffer), result);
         }
     }
     return result;
@@ -257,9 +261,20 @@ int MultiuserFile::FlushWriteBuffer()
         return 0;
     }
 
-    auto result = m_wrapped->Write(m_write_buffer.data(), m_buffer_offset, m_write_buffer.size());
-    if (result < 0) {
-        return result;
+    size_t total_written = 0;
+    while (total_written < m_write_buffer.size()) {
+        auto result = m_wrapped->Write(m_write_buffer.data() + total_written, 
+                                       m_buffer_offset + total_written, 
+                                       m_write_buffer.size() - total_written);
+        if (result < 0) {
+            // Write failed - don't clear buffer, return error
+            return result;
+        }
+        if (result == 0) {
+            // No progress - treat as error
+            return -EIO;
+        }
+        total_written += result;
     }
 
     if (m_state) {

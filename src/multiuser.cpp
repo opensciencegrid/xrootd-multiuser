@@ -224,7 +224,10 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
             size_t total_size = m_write_buffer.size() + size;
             
             if (total_size <= m_write_buffer_size) {
-                // Buffer this write
+                // Buffer this write - reserve capacity to avoid reallocations
+                if (m_write_buffer.capacity() < total_size) {
+                    m_write_buffer.reserve(total_size);
+                }
                 m_write_buffer.insert(m_write_buffer.end(), 
                                      static_cast<const unsigned char*>(buffer), 
                                      static_cast<const unsigned char*>(buffer) + size);
@@ -255,6 +258,15 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 
 
 
+// FlushWriteBuffer: Writes all buffered data to the underlying file system.
+// Preconditions: Must be called with m_buffer_mutex held.
+// Returns: 0 on success, negative error code on failure.
+// Side effects:
+//   - Writes buffer contents via m_wrapped->Write()
+//   - Updates checksum state if enabled (m_state)
+//   - Clears m_write_buffer and resets m_buffer_offset on success
+//   - Handles partial writes with retry loop
+//   - On failure, buffer is NOT cleared to allow retry
 int MultiuserFile::FlushWriteBuffer()
 {
     if (m_write_buffer.empty()) {

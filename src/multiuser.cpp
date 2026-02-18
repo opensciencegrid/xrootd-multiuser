@@ -200,7 +200,7 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
             ss << "Non-sequential write detected; disabling checksum calculation for " << m_fname;
             m_log.Emsg("Write", ss.str().c_str());
             delete m_state;
-            m_state = NULL;
+            m_state = nullptr;
         }
     }
 
@@ -261,8 +261,8 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
                 // If remaining data fits in buffer, buffer it; otherwise write directly
                 if (remaining_size <= m_write_buffer_size) {
                     m_buffer_offset = offset + space_in_buffer;
-                    if (m_write_buffer.capacity() < remaining_size) {
-                        m_write_buffer.reserve(remaining_size);
+                    if (m_write_buffer.capacity() < m_write_buffer_size) {
+                        m_write_buffer.reserve(m_write_buffer_size);
                     }
                     m_write_buffer.insert(m_write_buffer.end(),
                                          remaining_data,
@@ -367,7 +367,7 @@ int MultiuserFile::Close(long long *retsz)
             
         }
         delete m_state;
-        m_state = NULL;
+        m_state = nullptr;
     }
 
     return close_result;

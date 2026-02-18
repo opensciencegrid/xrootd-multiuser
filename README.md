@@ -25,6 +25,26 @@ To enable the checksum (only on XRootD 5.2+):
 ofs.ckslib * libXrdMultiuser.so
 ```
 
+### Write Buffering
+
+To reduce IOPS from small sequential writes, you can enable write buffering:
+
+```
+multiuser.writebuffersize <bytes>
+```
+
+Where `<bytes>` is the buffer size in bytes. Default is 0 (disabled). When enabled:
+- Sequential writes smaller than the buffer size are accumulated in memory
+- The buffer is flushed when full, when a non-sequential write occurs, or when the file is closed
+- Buffering is automatically disabled for a file if non-sequential writes are detected
+
+Example: Buffer up to 1MB of writes:
+```
+multiuser.writebuffersize 1048576
+```
+
+**Note:** Buffering is only suitable for sequential write workloads. Non-sequential writes will cause the buffer to be flushed and buffering disabled for that file.
+
 Startup
 -------
 

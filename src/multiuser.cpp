@@ -176,10 +176,11 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
-    // Lock protects buffer state and sequential write tracking.
-    // While this serializes writes to the same file, it ensures correctness
-    // and is consistent with the sequential write assumption.
-    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+    // Only take the lock if buffering is configured (m_write_buffer_size > 0)
+    std::unique_lock<std::mutex> lock(m_buffer_mutex, std::defer_lock);
+    if (m_write_buffer_size > 0) {
+        lock.lock();
+    }
 
     // Check for out-of-order writes if checksumming or buffering
     if ((offset != m_nextoff) && (m_state || m_buffering_enabled)) 
@@ -196,9 +197,10 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 
         if (m_state) {
             std::stringstream ss;
-            ss << "Out-of-order writes not supported while running checksum. " << m_fname;
+            ss << "Non-sequential write detected; disabling checksum calculation for " << m_fname;
             m_log.Emsg("Write", ss.str().c_str());
-            return -ENOTSUP;
+            delete m_state;
+            m_state = NULL;
         }
     }
 
@@ -234,12 +236,45 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
                 m_nextoff = offset + size;
                 return size;
             } else {
-                // Buffer would exceed limit - flush and write directly
+                // Buffer would exceed limit - fill buffer to maximum, flush, then continue
+                size_t space_in_buffer = m_write_buffer_size - m_write_buffer.size();
+                if (space_in_buffer > 0) {
+                    // Fill the buffer completely
+                    if (m_write_buffer.capacity() < m_write_buffer_size) {
+                        m_write_buffer.reserve(m_write_buffer_size);
+                    }
+                    m_write_buffer.insert(m_write_buffer.end(),
+                                         static_cast<const unsigned char*>(buffer),
+                                         static_cast<const unsigned char*>(buffer) + space_in_buffer);
+                }
+                
+                // Flush the full buffer
                 int flush_result = FlushWriteBuffer();
                 if (flush_result < 0) {
                     return flush_result;
                 }
-                // Fall through to direct write
+                
+                // Now handle the remaining data
+                const unsigned char* remaining_data = static_cast<const unsigned char*>(buffer) + space_in_buffer;
+                size_t remaining_size = size - space_in_buffer;
+                
+                // If remaining data fits in buffer, buffer it; otherwise write directly
+                if (remaining_size <= m_write_buffer_size) {
+                    m_buffer_offset = offset + space_in_buffer;
+                    if (m_write_buffer.capacity() < remaining_size) {
+                        m_write_buffer.reserve(remaining_size);
+                    }
+                    m_write_buffer.insert(m_write_buffer.end(),
+                                         remaining_data,
+                                         remaining_data + remaining_size);
+                    m_nextoff = offset + size;
+                    return size;
+                } else {
+                    // Remaining data is too large for buffer - fall through to direct write
+                    buffer = remaining_data;
+                    offset = offset + space_in_buffer;
+                    size = remaining_size;
+                }
             }
         }
     }
@@ -302,7 +337,11 @@ int MultiuserFile::FlushWriteBuffer()
 
 int MultiuserFile::Close(long long *retsz) 
 {
-    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+    // Only take the lock if buffering is configured (m_write_buffer_size > 0)
+    std::unique_lock<std::mutex> lock(m_buffer_mutex, std::defer_lock);
+    if (m_write_buffer_size > 0) {
+        lock.lock();
+    }
 
     // Flush any remaining buffered data
     if (!m_write_buffer.empty()) {

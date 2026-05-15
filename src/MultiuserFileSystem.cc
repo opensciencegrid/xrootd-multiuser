@@ -127,6 +127,9 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
                 else if (!strcmp("crc32", val)) {
                     m_digests |= ChecksumManager::CRC32;
                 }
+                else if (!strcmp("crc32c", val)) {
+                    m_digests |= ChecksumManager::CRC32C;
+                }
                 else if (!strcmp("adler32", val)) {
                     m_digests |= ChecksumManager::ADLER32;
                 }

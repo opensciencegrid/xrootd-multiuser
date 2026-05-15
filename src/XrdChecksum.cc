@@ -45,6 +45,9 @@ ChecksumManager::Set(const char *lfn, const ChecksumState &state)
     if (state.Get(ChecksumManager::CRC32).size())
         retval = this->Set(lfn, "CRC32", state.Get(ChecksumManager::CRC32).c_str());
     
+    if (state.Get(ChecksumManager::CRC32C).size())
+        retval = this->Set(lfn, "CRC32C", state.Get(ChecksumManager::CRC32C).c_str());
+    
     if (state.Get(ChecksumManager::MD5).size())
         retval = this->Set(lfn, "MD5", state.Get(ChecksumManager::MD5).c_str());
     
@@ -72,6 +75,10 @@ int        ChecksumManager::Calc( const char *lfn, XrdCksData &Cks, int doSet)
     else if (!strncasecmp(Cks.Name, "cksum", Cks.NameSize))
     {
         return_digest = ChecksumManager::CKSUM;
+    }
+    else if (!strncasecmp(Cks.Name, "crc32c", Cks.NameSize))
+    {
+        return_digest = ChecksumManager::CRC32C;
     }
     else if (!strncasecmp(Cks.Name, "crc32", Cks.NameSize))
     {
@@ -124,6 +131,9 @@ int        ChecksumManager::Calc( const char *lfn, XrdCksData &Cks, int doSet)
         break;
     case ChecksumManager::CRC32:
         checksum_value = state.Get(ChecksumManager::CRC32);
+        break;
+    case ChecksumManager::CRC32C:
+        checksum_value = state.Get(ChecksumManager::CRC32C);
         break;
     case ChecksumManager::MD5:
         checksum_value = state.Get(ChecksumManager::MD5);

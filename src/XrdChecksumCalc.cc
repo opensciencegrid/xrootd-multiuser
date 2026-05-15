@@ -8,6 +8,7 @@
 #include <openssl/evp.h>
 
 #include "XrdOss/XrdOss.hh"
+#include "XrdOuc/XrdOucCRC.hh"
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdSys/XrdSysXAttr.hh"
 
@@ -76,7 +77,6 @@ static uint32_t const g_crctab[256] =
   0xa2f33668, 0xbcb4666d, 0xb8757bda, 0xb5365d03, 0xb1f740b4
 };
 
-
 static std::string
 human_readable_evp(const unsigned char *evp, size_t length)
 {
@@ -96,6 +96,7 @@ ChecksumState::ChecksumState(unsigned digests)
     : m_digests(digests),
       m_cksum(0),
       m_crc32(crc32(0, NULL, 0)),
+      m_crc32c(0),
       m_adler32(adler32(0, NULL, 0)),
       m_md5_length(0),
       m_cur_chunk_bytes(0),
@@ -150,6 +151,11 @@ ChecksumState::Get(unsigned digest) const
         uint32_t crc32_no = htonl(m_crc32);
         return human_readable_evp(reinterpret_cast<unsigned char *>(&crc32_no), sizeof(crc32_no));
     }
+    if ((digest & ChecksumManager::CRC32C) && (m_digests & ChecksumManager::CRC32C))
+    {
+        uint32_t crc32c_no = htonl(m_crc32c);
+        return human_readable_evp(reinterpret_cast<unsigned char *>(&crc32c_no), sizeof(crc32c_no));
+    }
     if ((digest & ChecksumManager::ADLER32) && (m_digests & ChecksumManager::ADLER32))
     {
         uint32_t adler32_no = htonl(m_adler32);
@@ -188,6 +194,10 @@ ChecksumState::Update(const unsigned char *buffer, size_t bsize)
     if (m_digests & ChecksumManager::CRC32)
     {
         m_crc32 = crc32(m_crc32, buffer, bsize);
+    }
+    if (m_digests & ChecksumManager::CRC32C)
+    {
+        m_crc32c = XrdOucCRC::Calc32C(buffer, bsize, m_crc32c);
     }
     if (m_digests & ChecksumManager::MD5)
     {

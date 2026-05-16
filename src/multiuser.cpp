@@ -184,9 +184,9 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
     }
 
     auto result = m_wrapped->Write(buffer, offset, size);
-    if (result >= 0) {m_nextoff = offset + result;}
-    if (m_state)
+    if (m_state && result >= 0)
     {
+        m_nextoff += result;
         m_state->Update(static_cast<const unsigned char*>(buffer), size);
     }
     return result;

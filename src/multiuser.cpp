@@ -173,6 +173,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
+    bool checksum_abandoned = false;
 
     if ((offset != m_nextoff) && m_state) 
     {   
@@ -181,13 +182,24 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
         m_log.Emsg("Write", ss.str().c_str());
         delete m_state;
         m_state = NULL;
+        checksum_abandoned = true;
     }
 
     auto result = m_wrapped->Write(buffer, offset, size);
-    if (m_state && result >= 0)
+    if (result >= 0)
     {
-        m_nextoff += result;
-        m_state->Update(static_cast<const unsigned char*>(buffer), size);
+        m_nextoff = offset + result;
+    }
+    if (checksum_abandoned && result > 0 && g_checksum_manager)
+    {
+        UserSentry sentry(m_client, m_log);
+        if (sentry.IsValid()) {
+            g_checksum_manager->Del(m_fname.c_str(), m_digests);
+        }
+    }
+    if (m_state && result > 0)
+    {
+        m_state->Update(static_cast<const unsigned char*>(buffer), static_cast<size_t>(result));
     }
     return result;
 }

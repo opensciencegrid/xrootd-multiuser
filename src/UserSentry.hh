@@ -23,10 +23,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-// TODO: set this via library parameters.
-static const int g_minimum_uid = 500;
-static const int g_minimum_gid = 500;
-
 
 /**
  * Note: originally, we tried to use CAP_DAC_READ_SEARCH as that provides exactly what we need -
@@ -110,6 +106,14 @@ public:
 
     static bool IsCmsd() {return m_is_cmsd;}
 
+    // Configure the minimum UID/GID a mapped username may resolve to.  Any
+    // username resolving to an ID below these thresholds is treated as a
+    // system account and denied access.  Defaults to 500 (see multiuser.cpp).
+    static void SetMinimumUid(int uid) {m_min_uid = uid;}
+    static void SetMinimumGid(int gid) {m_min_gid = gid;}
+    static int GetMinimumUid() {return m_min_uid;}
+    static int GetMinimumGid() {return m_min_gid;}
+
     static bool IsGsiUserMapped(const XrdSecEntity *client) {
         // If VOMS was used to map client, return true
         if (client->vorg) { return true; }
@@ -164,11 +168,14 @@ public:
             }
             return;
         }
-        if (pwd.pw_uid < g_minimum_uid) {
+        // Cast to a signed type for the comparison: m_min_uid/m_min_gid are
+        // mutable ints, so comparing them directly against the unsigned
+        // pw_uid/pw_gid would trip -Wsign-compare (and -Werror).
+        if (static_cast<int>(pwd.pw_uid) < m_min_uid) {
             m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system UID; rejecting lookup");
             return;
         }
-        if (pwd.pw_gid < g_minimum_gid) {
+        if (static_cast<int>(pwd.pw_gid) < m_min_gid) {
             m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system GID; rejecting lookup");
             return;
         }
@@ -228,6 +235,11 @@ private:
     bool m_is_anonymous{false};
 
     static bool m_is_cmsd;
+
+    // Minimum UID/GID thresholds; configurable via multiuser.minuid /
+    // multiuser.mingid.  Definitions (and defaults) live in multiuser.cpp.
+    static int m_min_uid;
+    static int m_min_gid;
 
     XrdSysError &m_log;
 };

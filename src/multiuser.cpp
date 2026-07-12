@@ -26,6 +26,11 @@ ChecksumManager* g_checksum_manager = nullptr;
 
 bool UserSentry::m_is_cmsd = false;
 
+// Default minimum UID/GID.  Usernames mapping to an ID below these values are
+// rejected as system accounts.  Override via multiuser.minuid / multiuser.mingid.
+int UserSentry::m_min_uid = 500;
+int UserSentry::m_min_gid = 500;
+
 XrdVERSIONINFO(XrdOssGetFileSystem, Multiuser);
 
 // The status-quo to retrieve the default object is to copy/paste the

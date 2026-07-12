@@ -68,6 +68,31 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
     }
     Config.Attach(cfgFD);
     const char *val;
+
+    // Parse a single non-negative integer argument for the given directive.
+    // On success stores the value in `out` and returns true; on any error it
+    // logs an appropriate message and returns false.
+    auto parse_min_id = [&](const char *directive, int &out) -> bool {
+        val = Config.GetWord();
+        if (!val || !val[0]) {
+            m_log.Emsg("Config", directive, "must specify a value");
+            return false;
+        }
+        char *endptr = NULL;
+        errno = 0;
+        long int id_val = strtol(val, &endptr, 10);
+        if (errno || (endptr && *endptr != '\0')) {
+            m_log.Emsg("Config", directive, "must specify a valid integer value");
+            return false;
+        }
+        if (id_val < 0) {
+            m_log.Emsg("Config", directive, "must not be negative");
+            return false;
+        }
+        out = static_cast<int>(id_val);
+        return true;
+    };
+
     while ((val = Config.GetMyFirstWord())) {
         if (!strcmp("multiuser.umask", val)) {
             val = Config.GetWord();
@@ -90,6 +115,26 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
                 return false;
             }
             m_umask_mode = umask_val;
+        }
+
+        // Minimum UID a mapped username may resolve to.
+        if (!strcmp("multiuser.minuid", val)) {
+            int min_uid = 0;
+            if (!parse_min_id("multiuser.minuid", min_uid)) {
+                Config.Close();
+                return false;
+            }
+            UserSentry::SetMinimumUid(min_uid);
+        }
+
+        // Minimum GID a mapped username may resolve to.
+        if (!strcmp("multiuser.mingid", val)) {
+            int min_gid = 0;
+            if (!parse_min_id("multiuser.mingid", min_gid)) {
+                Config.Close();
+                return false;
+            }
+            UserSentry::SetMinimumGid(min_gid);
         }
 
         // Checksum on write
@@ -157,6 +202,13 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
         ss << "Setting umask to " << std::oct << std::setfill('0') << std::setw(4) << m_umask_mode;
         m_log.Emsg("Config", ss.str().c_str());
         umask(m_umask_mode);
+    }
+
+    {
+        std::stringstream ss;
+        ss << "Requiring mapped users to have a minimum UID of " << UserSentry::GetMinimumUid()
+           << " and a minimum GID of " << UserSentry::GetMinimumGid();
+        m_log.Emsg("Config", ss.str().c_str());
     }
 
     return true;

@@ -109,10 +109,10 @@ public:
     // Configure the minimum UID/GID a mapped username may resolve to.  Any
     // username resolving to an ID below these thresholds is treated as a
     // system account and denied access.  Defaults to 500 (see multiuser.cpp).
-    static void SetMinimumUid(int uid) {m_min_uid = uid;}
-    static void SetMinimumGid(int gid) {m_min_gid = gid;}
-    static int GetMinimumUid() {return m_min_uid;}
-    static int GetMinimumGid() {return m_min_gid;}
+    static void SetMinimumUid(uid_t uid) {m_min_uid = uid;}
+    static void SetMinimumGid(gid_t gid) {m_min_gid = gid;}
+    static uid_t GetMinimumUid() {return m_min_uid;}
+    static gid_t GetMinimumGid() {return m_min_gid;}
 
     static bool IsGsiUserMapped(const XrdSecEntity *client) {
         // If VOMS was used to map client, return true
@@ -168,14 +168,11 @@ public:
             }
             return;
         }
-        // Cast to a signed type for the comparison: m_min_uid/m_min_gid are
-        // mutable ints, so comparing them directly against the unsigned
-        // pw_uid/pw_gid would trip -Wsign-compare (and -Werror).
-        if (static_cast<int>(pwd.pw_uid) < m_min_uid) {
+        if (pwd.pw_uid < m_min_uid) {
             m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system UID; rejecting lookup");
             return;
         }
-        if (static_cast<int>(pwd.pw_gid) < m_min_gid) {
+        if (pwd.pw_gid < m_min_gid) {
             m_log.Emsg("UserSentry", "Multiuser denying access: Username", username.c_str(), "maps to a system GID; rejecting lookup");
             return;
         }
@@ -238,8 +235,8 @@ private:
 
     // Minimum UID/GID thresholds; configurable via multiuser.minuid /
     // multiuser.mingid.  Definitions (and defaults) live in multiuser.cpp.
-    static int m_min_uid;
-    static int m_min_gid;
+    static uid_t m_min_uid;
+    static gid_t m_min_gid;
 
     XrdSysError &m_log;
 };

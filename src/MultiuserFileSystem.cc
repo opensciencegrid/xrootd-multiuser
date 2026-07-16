@@ -18,11 +18,13 @@
 #include "MultiuserFile.hh"
 
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <stdint.h>
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -72,7 +74,7 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
     // Parse a single non-negative integer argument for the given directive.
     // On success stores the value in `out` and returns true; on any error it
     // logs an appropriate message and returns false.
-    auto parse_min_id = [&](const char *directive, int &out) -> bool {
+    auto parse_min_id = [&](const char *directive, long int &out) -> bool {
         val = Config.GetWord();
         if (!val || !val[0]) {
             m_log.Emsg("Config", directive, "must specify a value");
@@ -89,7 +91,7 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
             m_log.Emsg("Config", directive, "must not be negative");
             return false;
         }
-        out = static_cast<int>(id_val);
+        out = id_val;
         return true;
     };
 
@@ -119,22 +121,32 @@ MultiuserFileSystem::Config(XrdSysLogger *lp, const char *configfn)
 
         // Minimum UID a mapped username may resolve to.
         if (!strcmp("multiuser.minuid", val)) {
-            int min_uid = 0;
+            long int min_uid = 0;
             if (!parse_min_id("multiuser.minuid", min_uid)) {
                 Config.Close();
                 return false;
             }
-            UserSentry::SetMinimumUid(min_uid);
+            if (static_cast<uintmax_t>(min_uid) > static_cast<uintmax_t>(std::numeric_limits<uid_t>::max())) {
+                m_log.Emsg("Config", "multiuser.minuid exceeds the maximum supported UID value");
+                Config.Close();
+                return false;
+            }
+            UserSentry::SetMinimumUid(static_cast<uid_t>(min_uid));
         }
 
         // Minimum GID a mapped username may resolve to.
         if (!strcmp("multiuser.mingid", val)) {
-            int min_gid = 0;
+            long int min_gid = 0;
             if (!parse_min_id("multiuser.mingid", min_gid)) {
                 Config.Close();
                 return false;
             }
-            UserSentry::SetMinimumGid(min_gid);
+            if (static_cast<uintmax_t>(min_gid) > static_cast<uintmax_t>(std::numeric_limits<gid_t>::max())) {
+                m_log.Emsg("Config", "multiuser.mingid exceeds the maximum supported GID value");
+                Config.Close();
+                return false;
+            }
+            UserSentry::SetMinimumGid(static_cast<gid_t>(min_gid));
         }
 
         // Checksum on write

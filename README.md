@@ -25,6 +25,23 @@ To enable the checksum (only on XRootD 5.2+):
 ofs.ckslib * libXrdMultiuser.so
 ```
 
+The following optional directives can also be set in the Xrootd configuration file:
+
+| Directive | Default | Description |
+| --- | --- | --- |
+| `multiuser.umask <octal>` | (unset) | Apply this umask to files and directories created through the plugin. |
+| `multiuser.checksumonwrite <on\|off>` | `off` | Compute checksums while a file is being written. |
+| `multiuser.minuid <n>` | `500` | Minimum UID a mapped username may resolve to; usernames mapping to a lower UID are treated as system accounts and denied. |
+| `multiuser.mingid <n>` | `500` | Minimum GID a mapped username may resolve to; usernames mapping to a lower GID are treated as system accounts and denied. |
+
+For example, to allow users and groups with IDs as low as 100 (e.g., groups
+imported from a Lustre file system):
+
+```
+multiuser.minuid 100
+multiuser.mingid 100
+```
+
 Startup
 -------
 

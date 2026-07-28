@@ -41,6 +41,7 @@ private:
     const unsigned m_digests;
     uint32_t m_cksum;
     uint32_t m_crc32;
+    uint32_t m_crc32c;
     uint32_t m_adler32;
 
     unsigned m_md5_length;
@@ -119,6 +120,7 @@ public:
         ADLER32 = 0x04,
         CVMFS   = 0x08,
         CRC32   = 0x10,
+        CRC32C  = 0x20,
         ALL     = 0xff
     };
 

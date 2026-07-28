@@ -195,6 +195,24 @@ int ChecksumManager::Set(const char *lfn, const char *cksname, const char *chksv
     return XrdCksManager::Set(pfn.c_str(), cks);
 }
 
+int ChecksumManager::Del(const char *lfn, unsigned digests)
+{
+    std::string pfn = this->LFN2PFN(lfn);
+    auto del_digest = [&](const char *digest_name) {
+        std::string checksum_name = ATTR_PREFIX;
+        checksum_name += digest_name;
+        XrdSysXAttrActive->Del(checksum_name.c_str(), pfn.c_str());
+    };
+
+    if (digests & ChecksumManager::CKSUM) del_digest("CKSUM");
+    if (digests & ChecksumManager::ADLER32) del_digest("ADLER32");
+    if (digests & ChecksumManager::CRC32) del_digest("CRC32");
+    if (digests & ChecksumManager::MD5) del_digest("MD5");
+    if (digests & ChecksumManager::CVMFS) del_digest("CVMFS");
+
+    return 0;
+}
+
 int        ChecksumManager::Ver(  const char *lfn, XrdCksData &Cks)
 {
     return XrdCksManager::Ver(lfn, Cks);
@@ -243,4 +261,3 @@ std::string ChecksumManager::LFN2PFN(const char* lfn) {
     pfn = pfn_cstr;
     return pfn;
 }
-

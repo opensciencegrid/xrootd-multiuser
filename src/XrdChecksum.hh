@@ -109,6 +109,7 @@ public:
 
     int Set(const char *pfn, const ChecksumState &state);
     int Set(const char *pfn, const char *cksname, const char *chksvalue);
+    int Del(const char *pfn, unsigned digests);
 
 
     virtual ~ChecksumManager() {}

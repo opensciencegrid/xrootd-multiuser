@@ -59,8 +59,39 @@ private:
 };
 
 
+/**
+ * The IDs a client was mapped to.  Saved at open time so that operations on
+ * the open file handle can switch FS IDs without repeating the account lookup.
+ */
+struct UserIdentity {
+    bool valid{false};
+    bool anonymous{false};
+    uid_t uid{0};
+    gid_t gid{0};
+    std::vector<gid_t> groups;
+};
+
+
 class UserSentry {
 public:
+    // Switch to an identity resolved earlier (see Identity()).  Performs no
+    // account lookup and no logging on success, so it is cheap enough for
+    // per-I/O use.
+    UserSentry(const UserIdentity &identity, XrdSysError &log) :
+        m_log(log)
+    {
+        if (!identity.valid) {
+            return;
+        }
+        if (identity.anonymous) {
+            m_is_anonymous = true;
+            return;
+        }
+        if (!Switch(identity)) {
+            m_log.Emsg("UserSentry", "Multiuser denying access: Failed to switch FS uid to saved identity");
+        }
+    }
+
     UserSentry(const XrdSecEntity *client, XrdSysError &log) :
         m_log(log)
     {
@@ -194,19 +225,32 @@ public:
             m_log.Emsg("UserSentry", "Multiuser denying access: Failure when looking up supplementary groups for username", username.c_str());
             return;
         }
+        groups.resize(ngroups);
 
-        // Note: Capabilities need to be set per thread, so we need to do this
-        ConfigCaps(m_log, nullptr);
+        UserIdentity identity;
+        identity.valid = true;
+        identity.uid = result->pw_uid;
+        identity.gid = result->pw_gid;
+        identity.groups = std::move(groups);
 
         // TODO: One log line per FS open seems noisy -- could make this configurable.
         m_log.Emsg("UserSentry", "Switching FS uid for user", username.c_str());
-        m_orig_uid = setfsuid(result->pw_uid);
-        if (m_orig_uid < 0) {
+        if (!Switch(identity)) {
             m_log.Emsg("UserSentry", "Multiuser denying access: Failed to switch FS uid for user", username.c_str());
             return;
         }
-        m_orig_gid = setfsgid(result->pw_gid);
-        ThreadSetgroups(ngroups, groups.data());
+        m_identity = std::move(identity);
+    }
+
+    // The identity this sentry switched to; reuse it with the
+    // UserSentry(const UserIdentity &, ...) constructor.
+    UserIdentity Identity() const {
+        UserIdentity identity = m_identity;
+        if (m_is_anonymous) {
+            identity.valid = true;
+            identity.anonymous = true;
+        }
+        return identity;
     }
 
     ~UserSentry() {
@@ -225,11 +269,26 @@ public:
     bool IsValid() const {return ((m_orig_gid != -1) && (m_orig_uid != -1)) || m_is_anonymous;}
 
 private:
+    bool Switch(const UserIdentity &identity)
+    {
+        // Note: Capabilities need to be set per thread, so we need to do this
+        ConfigCaps(m_log, nullptr);
+
+        m_orig_uid = setfsuid(identity.uid);
+        if (m_orig_uid < 0) {
+            return false;
+        }
+        m_orig_gid = setfsgid(identity.gid);
+        ThreadSetgroups(identity.groups.size(), identity.groups.data());
+        return true;
+    }
+
     // Note I am not using `uid_t` and `gid_t` here in order
     // to have the ability to denote an invalid ID (-1)
     int m_orig_uid{-1};
     int m_orig_gid{-1};
     bool m_is_anonymous{false};
+    UserIdentity m_identity;
 
     static bool m_is_cmsd;
 

@@ -160,6 +160,7 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
     m_client = env.secEnv();
     UserSentry sentry(m_client, m_log);
     if (!sentry.IsValid()) return -EACCES;
+    m_identity = sentry.Identity();
 
     auto open_result = m_wrapped->Open(path, Oflag, Mode, env);
 
@@ -187,7 +188,12 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
         return -ENOTSUP;
     }
 
-    auto result = m_wrapped->Write(buffer, offset, size);
+    ssize_t result;
+    {
+        UserSentry sentry(m_identity, m_log);
+        if (!sentry.IsValid()) {return -EACCES;}
+        result = m_wrapped->Write(buffer, offset, size);
+    }
     if (result >= 0) {m_nextoff += result;}
     if (m_state)
     {
@@ -198,21 +204,26 @@ ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 
 
 
-int MultiuserFile::Close(long long *retsz) 
+int MultiuserFile::Close(long long *retsz)
 {
+    // Close as the mapped user: shared filesystems (e.g., FUSE-based or
+    // Lustre) carry the caller's fsuid in the close / flush request and may
+    // reject it when it differs from the user that opened the file.
+    UserSentry sentry(m_identity, m_log);
+    if (!sentry.IsValid()) {
+        // Still close the file to avoid leaking the descriptor.
+        m_log.Emsg("Close", "Unable to switch to mapped user; closing as daemon user", m_fname.c_str());
+    }
     auto close_result = m_wrapped->Close(retsz);
+    if (close_result != XrdOssOK) {
+        m_log.Emsg("Close", "Failed to close file", m_fname.c_str(), strerror(-close_result));
+    }
     if (m_state)
     {
         m_state->Finalize();
-        if (close_result == XrdOssOK) {
-            // Only write checksum file if close() was successful
-            {
-                UserSentry sentry(m_client, m_log);
-                if (sentry.IsValid()) {
-                    g_checksum_manager->Set(m_fname.c_str(), *m_state);
-                }
-            }
-            
+        // Only write checksum file if close() was successful
+        if (close_result == XrdOssOK && sentry.IsValid()) {
+            g_checksum_manager->Set(m_fname.c_str(), *m_state);
         }
         delete m_state;
         m_state = NULL;

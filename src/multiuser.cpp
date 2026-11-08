@@ -5,6 +5,7 @@
 #include "XrdOuc/XrdOucStream.hh"
 #include "XrdSec/XrdSecEntity.hh"
 #include "XrdSec/XrdSecEntityAttr.hh"
+#include "XrdSfs/XrdSfsAio.hh"
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdVersion.hh"
 #include "XrdOss/XrdOss.hh"
@@ -176,24 +177,71 @@ int     MultiuserFile::Open(const char *path, int Oflag, mode_t Mode, XrdOucEnv 
 
 
 
+// Checksum-on-write digests the data as it is written, so it needs every
+// byte, in order.  Each write path checks ChecksumAllowsWrite() before the
+// write and calls ChecksumAfterWrite() after it.
+
+bool MultiuserFile::ChecksumAllowsWrite(off_t offset)
+{
+    if (!m_state || offset == m_nextoff) {return true;}
+    std::stringstream ss;
+    ss << "Out-of-order writes not supported while running checksum. " << m_fname;
+    m_log.Emsg("Write", ss.str().c_str());
+    return false;
+}
+
+void MultiuserFile::ChecksumAfterWrite(const void *buffer, ssize_t result)
+{
+    if (result >= 0) {m_nextoff += result;}
+    if (m_state && result > 0)
+    {
+        m_state->Update(static_cast<const unsigned char*>(buffer), static_cast<size_t>(result));
+    }
+}
+
 ssize_t MultiuserFile::Write(const void *buffer, off_t offset, size_t size)
 {
-
-    if ((offset != m_nextoff) && m_state) 
-    {   
-        std::stringstream ss;
-        ss << "Out-of-order writes not supported while running checksum. " << m_fname;
-        m_log.Emsg("Write", ss.str().c_str());
-        return -ENOTSUP;
-    }
-
+    if (!ChecksumAllowsWrite(offset)) {return -ENOTSUP;}
     auto result = m_wrapped->Write(buffer, offset, size);
-    if (result >= 0) {m_nextoff += result;}
+    ChecksumAfterWrite(buffer, result);
+    return result;
+}
+
+ssize_t MultiuserFile::pgWrite(void* buffer, off_t offset, size_t wrlen,
+                               uint32_t* csvec, uint64_t opts)
+{
+    if (!ChecksumAllowsWrite(offset)) {return -ENOTSUP;}
+    auto result = m_wrapped->pgWrite(buffer, offset, wrlen, csvec, opts);
+    ChecksumAfterWrite(buffer, result);
+    return result;
+}
+
+// The asynchronous variants complete on other threads, in any order, so while
+// a checksum is running they are done synchronously instead (as XrdOssDF's
+// default pgWrite(XrdSfsAio*) does); otherwise they are passed through.
+int MultiuserFile::pgWrite(XrdSfsAio* aioparm, uint64_t opts)
+{
+    if (m_state) {return XrdOssDF::pgWrite(aioparm, opts);}  // calls this->pgWrite()
+    return m_wrapped->pgWrite(aioparm, opts);
+}
+
+int MultiuserFile::Write(XrdSfsAio *aiop)
+{
     if (m_state)
     {
-        m_state->Update(static_cast<const unsigned char*>(buffer), size);
+        aiop->Result = this->Write((const void *)aiop->sfsAio.aio_buf,  // as XrdOssDF does
+                                   static_cast<off_t>(aiop->sfsAio.aio_offset),
+                                   static_cast<size_t>(aiop->sfsAio.aio_nbytes));
+        aiop->doneWrite();
+        return 0;
     }
-    return result;
+    return m_wrapped->Write(aiop);
+}
+
+ssize_t MultiuserFile::WriteV(XrdOucIOVec *writeV, int wrvcnt)
+{
+    if (m_state) {return XrdOssDF::WriteV(writeV, wrvcnt);}  // calls this->Write() per element
+    return m_wrapped->WriteV(writeV, wrvcnt);
 }
 
 

@@ -1,0 +1,72 @@
+name: Build RPM
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    name: RPM (${{ matrix.dist }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dist: el8
+            image: almalinux:8
+            osg_release: https://repo.osg-htc.org/osg/24-main/osg-24-main-el8-release-latest.rpm
+            extra_repo: powertools
+          - dist: el9
+            image: almalinux:9
+            osg_release: https://repo.osg-htc.org/osg/24-main/osg-24-main-el9-release-latest.rpm
+            extra_repo: crb
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      # git must exist before checkout so actions/checkout makes a real
+      # clone (needed for `git archive` below).
+      - name: Install build tooling
+        run: |
+          dnf -y install dnf-plugins-core epel-release git rpm-build rpmdevtools
+          dnf config-manager --set-enabled ${{ matrix.extra_repo }}
+          # OSG ships XRootD 5.x, which the spec pins (>= 5, < 6).
+          dnf -y install ${{ matrix.osg_release }}
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install BuildRequires
+        run: dnf -y builddep rpm/xrootd-multiuser.spec
+
+      - name: Create source tarball
+        id: source
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          rpmdev-setuptree
+          version=$(rpmspec -q --srpm --qf '%{version}' rpm/xrootd-multiuser.spec)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          git archive HEAD --prefix="xrootd-multiuser-${version}/" \
+            | gzip -7 > ~/rpmbuild/SOURCES/xrootd-multiuser-${version}.tar.gz
+
+      - name: Build RPMs
+        run: rpmbuild -ba rpm/xrootd-multiuser.spec
+
+      - name: Collect RPMs
+        run: |
+          mkdir -p dist
+          cp ~/rpmbuild/SRPMS/*.rpm ~/rpmbuild/RPMS/*/*.rpm dist/
+          ls -l dist
+
+      - name: Upload RPMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: xrootd-multiuser-${{ steps.source.outputs.version }}-${{ matrix.dist }}
+          path: dist/*.rpm
+          if-no-files-found: error
